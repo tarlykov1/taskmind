@@ -1,0 +1,43 @@
+{
+  "agent": {
+    "pollIntervalMs": 1000,
+    "idleThresholdSeconds": 60,
+    "logRoot": "data",
+    "enableScreenshots": true,
+    "screenshotQuality": 75,
+    "maxScreenshotsPerDay": 300,
+    "archiveDaily": true,
+    "copyArchiveToNetworkShare": false,
+    "networkSharePath": "\\\\fileserver\\task_mining_pilot"
+  },
+  "privacy": {
+    "hashUserName": false,
+    "maskWindowTitles": false,
+    "allowedDomainsOnly": false
+  },
+  "screenshotRules": {
+    "takeOnWindowChange": true,
+    "takeOnLongActivitySeconds": 120,
+    "allowedProcesses": [
+      "chrome.exe",
+      "msedge.exe",
+      "1cv8.exe",
+      "EXCEL.EXE",
+      "WINWORD.EXE",
+      "OUTLOOK.EXE"
+    ],
+    "titleContains": [
+      "Naumen",
+      "Service Desk",
+      "Битрикс24",
+      "1С",
+      "Заявка",
+      "Документ"
+    ]
+  },
+  "logging": {
+    "writeJsonl": true,
+    "writeCsv": true,
+    "rotateDaily": true
+  }
+}
