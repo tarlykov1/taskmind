@@ -1,8 +1,18 @@
 # GSP Task Mining Agent
 
-## Скачать готовую версию
+## Быстрый запуск из ZIP репозитория
 
-Не скачивайте **Source code ZIP** для запуска агента: исходный код не содержит готового EXE. Готовые файлы публикуются во вкладке **GitHub Releases** после автоматической сборки GitHub Actions.
+1. Нажмите **Code → Download ZIP**.
+2. Распакуйте архив.
+3. Откройте папку `dist`.
+4. Распакуйте `GSPTaskMiningAgentPortable.zip`.
+5. Запустите `START_AGENT.cmd`.
+
+Папка `dist` обновляется автоматически после успешной сборки в `main` и содержит готовую portable-версию: `GSPTaskMiningAgent.exe`, `GSPTaskMiningAgentPortable.zip`, `SHA256SUMS.txt` и `README.txt`.
+
+## Скачать готовую версию через Releases
+
+Готовые файлы также публикуются во вкладке **GitHub Releases** после автоматической сборки GitHub Actions.
 
 Скачайте из последнего Release один из файлов:
 
@@ -54,7 +64,7 @@ data/agent-status.txt
 
 ## Для разработчиков
 
-Автоматическая сборка и публикация Release настроены в `.github/workflows/build-release.yml`. Workflow запускается при push в `main` и вручную через `workflow_dispatch`, собирает self-contained Windows x64 EXE, формирует portable ZIP, считает SHA-256 и публикует Release `pilot-<run_number>`.
+Автоматическая сборка и публикация Release настроены в `.github/workflows/build-release.yml`. Workflow запускается при изменениях исходного кода в `main` и вручную через `workflow_dispatch`, но не перезапускается при обновлении только `dist/**`. Он собирает self-contained Windows x64 EXE, формирует portable ZIP, считает SHA-256, загружает Actions artifact, публикует Release `pilot-<run_number>` и коммитит готовые безопасные файлы в `dist`.
 
 Локальная сборка на Windows с .NET 8 SDK:
 
