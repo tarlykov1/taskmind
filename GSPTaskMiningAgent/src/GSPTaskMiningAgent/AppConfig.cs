@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -5,6 +6,8 @@ namespace GSPTaskMiningAgent;
 
 public sealed class AppConfig
 {
+    private const string EmbeddedConfigResourceName = "GSPTaskMiningAgent.config.example.json";
+
     public AgentOptions Agent { get; set; } = new();
     public PrivacyOptions Privacy { get; set; } = new();
     public ScreenshotRuleOptions ScreenshotRules { get; set; } = new();
@@ -13,23 +16,30 @@ public sealed class AppConfig
     public static AppConfig LoadOrCreate(string baseDirectory)
     {
         var configPath = Path.Combine(baseDirectory, "config.json");
-        var examplePath = Path.Combine(baseDirectory, "config.example.json");
 
         if (!File.Exists(configPath))
         {
-            if (File.Exists(examplePath))
-            {
-                File.Copy(examplePath, configPath);
-            }
-            else
-            {
-                var defaults = new AppConfig();
-                File.WriteAllText(configPath, JsonSerializer.Serialize(defaults, JsonOptions));
-            }
+            File.WriteAllText(configPath, ReadEmbeddedExampleConfig());
         }
 
         var json = File.ReadAllText(configPath);
         var config = JsonSerializer.Deserialize<AppConfig>(json, JsonOptions) ?? new AppConfig();
+        config.NormalizePaths(baseDirectory);
+        return config;
+    }
+
+    public static string ReadEmbeddedExampleConfig()
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        using var stream = assembly.GetManifestResourceStream(EmbeddedConfigResourceName)
+            ?? throw new InvalidOperationException($"Embedded resource '{EmbeddedConfigResourceName}' was not found.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    public static AppConfig LoadEmbeddedExample(string baseDirectory)
+    {
+        var config = JsonSerializer.Deserialize<AppConfig>(ReadEmbeddedExampleConfig(), JsonOptions) ?? new AppConfig();
         config.NormalizePaths(baseDirectory);
         return config;
     }
@@ -69,7 +79,7 @@ public sealed class AgentOptions
     public int MaxScreenshotsPerDay { get; set; } = 300;
     public bool ArchiveDaily { get; set; } = true;
     public bool CopyArchiveToNetworkShare { get; set; }
-    public string NetworkSharePath { get; set; } = @"\\fileserver\task_mining_pilot";
+    public string NetworkSharePath { get; set; } = @"";
 }
 
 public sealed class PrivacyOptions

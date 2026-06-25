@@ -52,7 +52,7 @@ data\archives\YYYY-MM-DD_PC-NAME.zip
 Если включено копирование на сетевую шару, проверьте папку:
 
 ```text
-\\fileserver\task_mining_pilot\PC-NAME
+\\your-file-server\task-mining-pilot\PC-NAME
 ```
 
 ## Как получить отчет

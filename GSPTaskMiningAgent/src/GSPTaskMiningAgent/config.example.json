@@ -8,7 +8,7 @@
     "maxScreenshotsPerDay": 300,
     "archiveDaily": true,
     "copyArchiveToNetworkShare": false,
-    "networkSharePath": "\\\\fileserver\\task_mining_pilot"
+    "networkSharePath": ""
   },
   "privacy": {
     "hashUserName": false,
