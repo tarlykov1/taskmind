@@ -1,0 +1,8 @@
+{
+  "pollIntervalSeconds": 5,
+  "enableScreenshots": false,
+  "screenshotIntervalSeconds": 300,
+  "maskWindowTitles": true,
+  "hashUserName": true,
+  "archiveAfterDays": 7
+}

@@ -1,160 +1,53 @@
-name: Build and Release Windows Portable Agent
+name: build-release
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths-ignore:
-      - "dist/**"
+      - 'dist/**'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build-release:
+  windows:
     runs-on: windows-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup .NET 8 SDK
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-
-      - name: Restore
-        run: dotnet restore GSPTaskMiningAgent/src/GSPTaskMiningAgent/GSPTaskMiningAgent.csproj
-
-      - name: Build Release
-        run: dotnet build GSPTaskMiningAgent/src/GSPTaskMiningAgent/GSPTaskMiningAgent.csproj -c Release --no-restore
-
-      - name: Publish self-contained Windows x64 EXE
+      - name: Build, test, publish and package
+        shell: pwsh
+        run: pwsh -File tools/build-portable.ps1
+      - name: Verify dist
         shell: pwsh
         run: |
-          $project = "GSPTaskMiningAgent/src/GSPTaskMiningAgent/GSPTaskMiningAgent.csproj"
-          $publishDir = "output/publish"
-          if (Test-Path $publishDir) { Remove-Item $publishDir -Recurse -Force }
-          dotnet publish $project -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:DebugType=None /p:DebugSymbols=false -o $publishDir
-
-      - name: Verify published EXE exists
+          if (!(Test-Path dist/GSPTaskMiningAgent.exe)) { throw 'missing exe' }
+          if (!(Test-Path dist/GSPTaskMiningAgentPortable.zip)) { throw 'missing portable zip' }
+          tar -tf dist/GSPTaskMiningAgentPortable.zip | Select-String 'GSPTaskMiningAgent.exe'
+      - name: Commit dist
         shell: pwsh
         run: |
-          if (-not (Test-Path "output/publish/GSPTaskMiningAgent.exe")) {
-            throw "output/publish/GSPTaskMiningAgent.exe was not created."
-          }
-
-      - name: Run self-test
-        shell: pwsh
-        run: |
-          & "output/publish/GSPTaskMiningAgent.exe" --self-test --debug
-          if ($LASTEXITCODE -ne 0) {
-            throw "Self-test failed with exit code $LASTEXITCODE."
-          }
-
-      - name: Verify first-run config and data folders
-        shell: pwsh
-        run: |
-          $testDir = "output/first-run-test"
-          if (Test-Path $testDir) { Remove-Item $testDir -Recurse -Force }
-          New-Item -ItemType Directory -Path $testDir | Out-Null
-          Copy-Item "output/publish/GSPTaskMiningAgent.exe" $testDir
-          $process = Start-Process -FilePath "$testDir/GSPTaskMiningAgent.exe" -WorkingDirectory $testDir -PassThru
-          Start-Sleep -Seconds 5
-          if (-not (Test-Path "$testDir/config.json")) { throw "config.json was not created on first run." }
-          foreach ($dir in @("data/logs", "data/screenshots", "data/archives", "data/errors")) {
-            if (-not (Test-Path "$testDir/$dir")) { throw "$dir was not created on first run." }
-          }
-          if (-not (Test-Path "$testDir/data/agent-status.txt")) { throw "data/agent-status.txt was not created on first run." }
-          & "$testDir/GSPTaskMiningAgent.exe" --stop
-          Start-Sleep -Seconds 2
-          if (-not $process.HasExited) { Stop-Process -Id $process.Id -Force }
-
-      - name: Build portable folder
-        shell: pwsh
-        run: |
-          $portableDir = "output/GSPTaskMiningAgentPortable"
-          if (Test-Path $portableDir) { Remove-Item $portableDir -Recurse -Force }
-          New-Item -ItemType Directory -Path "$portableDir/data" | Out-Null
-          Copy-Item "output/publish/GSPTaskMiningAgent.exe" $portableDir
-          Copy-Item "GSPTaskMiningAgent/src/GSPTaskMiningAgent/config.example.json" $portableDir
-          Copy-Item "GSPTaskMiningAgent/package/START_AGENT.cmd" $portableDir
-          Copy-Item "GSPTaskMiningAgent/package/ENABLE_AUTOSTART.cmd" $portableDir
-          Copy-Item "GSPTaskMiningAgent/package/DISABLE_AUTOSTART.cmd" $portableDir
-          Copy-Item "GSPTaskMiningAgent/package/README.txt" $portableDir
-          New-Item -ItemType File -Path "$portableDir/data/.gitkeep" | Out-Null
-
-      - name: Create portable ZIP and verify contents
-        shell: pwsh
-        run: |
-          $zip = "output/GSPTaskMiningAgentPortable.zip"
-          if (Test-Path $zip) { Remove-Item $zip -Force }
-          Compress-Archive -Path "output/GSPTaskMiningAgentPortable/*" -DestinationPath $zip -Force
-          if (-not (Test-Path $zip)) { throw "Portable ZIP was not created." }
-          if ((Get-Item $zip).Length -le 0) { throw "Portable ZIP is empty." }
-          $list = tar -tf $zip
-          if (-not ($list -match "GSPTaskMiningAgent.exe")) { throw "Portable ZIP does not contain GSPTaskMiningAgent.exe." }
-
-      - name: Create SHA256SUMS.txt
-        shell: pwsh
-        run: |
-          $files = @("output/publish/GSPTaskMiningAgent.exe", "output/GSPTaskMiningAgentPortable.zip")
-          $lines = foreach ($file in $files) {
-            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $(Split-Path $file -Leaf)"
-          }
-          $lines | Set-Content -Path "output/SHA256SUMS.txt" -Encoding ascii
-          Get-Content "output/SHA256SUMS.txt"
-
-
-      - name: Update dist folder
-        shell: pwsh
-        run: |
-          if (Test-Path "dist") { Remove-Item "dist" -Recurse -Force }
-          New-Item -ItemType Directory -Path "dist" | Out-Null
-          Copy-Item "output/publish/GSPTaskMiningAgent.exe" "dist/GSPTaskMiningAgent.exe"
-          Copy-Item "output/GSPTaskMiningAgentPortable.zip" "dist/GSPTaskMiningAgentPortable.zip"
-          Copy-Item "output/SHA256SUMS.txt" "dist/SHA256SUMS.txt"
-          Copy-Item "GSPTaskMiningAgent/package/README.txt" "dist/README.txt"
-
-      - name: Verify dist contents
-        shell: pwsh
-        run: |
-          if (-not (Test-Path "dist/GSPTaskMiningAgent.exe")) { throw "dist/GSPTaskMiningAgent.exe was not created." }
-          if (-not (Test-Path "dist/GSPTaskMiningAgentPortable.zip")) { throw "dist/GSPTaskMiningAgentPortable.zip was not created." }
-          if ((Get-Item "dist/GSPTaskMiningAgent.exe").Length -le 0) { throw "dist/GSPTaskMiningAgent.exe is empty." }
-          if ((Get-Item "dist/GSPTaskMiningAgentPortable.zip").Length -le 0) { throw "dist/GSPTaskMiningAgentPortable.zip is empty." }
-          $list = tar -tf "dist/GSPTaskMiningAgentPortable.zip"
-          if (-not ($list -match "GSPTaskMiningAgent.exe")) { throw "dist/GSPTaskMiningAgentPortable.zip does not contain GSPTaskMiningAgent.exe." }
-
-      - name: Commit dist to main
-        shell: pwsh
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add dist
-          git diff --cached --quiet || git commit -m "Update portable build [skip ci]"
-          git pull --rebase origin main
-          git push
-
-      - name: Upload portable artifact
-        uses: actions/upload-artifact@v4
+          if (!(git diff --cached --quiet)) {
+            git commit -m 'Update portable Windows build [skip ci]'
+            git pull --rebase origin main
+            git push
+          }
+      - uses: actions/upload-artifact@v4
         with:
           name: GSPTaskMiningAgentPortable
-          path: output/GSPTaskMiningAgentPortable.zip
+          path: dist/GSPTaskMiningAgentPortable.zip
           if-no-files-found: error
-
       - name: Create GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "pilot-${{ github.run_number }}" `
-            "output/publish/GSPTaskMiningAgent.exe" `
-            "output/GSPTaskMiningAgentPortable.zip" `
-            "output/SHA256SUMS.txt" `
-            --target "${{ github.sha }}" `
-            --title "GSP Task Mining Agent Pilot #${{ github.run_number }}" `
-            --notes "Готовая portable-сборка Windows x64. Установка .NET не требуется." `
-            --latest
+          gh release create "pilot-${{ github.run_number }}" dist/GSPTaskMiningAgent.exe dist/GSPTaskMiningAgentPortable.zip dist/SHA256SUMS.txt --target "${{ github.sha }}" --title "GSPTaskMiningAgent pilot ${{ github.run_number }}" --notes "Self-contained Windows x64 portable build." --latest
