@@ -1,5 +1,7 @@
-!dist/
-!dist/GSPTaskMiningAgent.exe
-!dist/GSPTaskMiningAgentPortable.zip
-!dist/SHA256SUMS.txt
-!dist/README.txt
+bin/
+obj/
+artifacts/
+TestResults/
+*.user
+config.json
+data/
