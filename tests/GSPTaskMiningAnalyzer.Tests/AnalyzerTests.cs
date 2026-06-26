@@ -33,23 +33,88 @@ public sealed class AnalyzerTests
     }
 
     [Fact]
-    public void ReadsJsonlCsvAndZip()
+    public void ReadsJsonl()
     {
-        var d = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(d);
-        var json = "{\"timestampUtc\":\"2026-01-01T00:00:00Z\",\"machineName\":\"m\",\"userName\":\"u\",\"processName\":\"A\",\"isIdle\":false}\n";
-        File.WriteAllText(Path.Combine(d, "a.jsonl"), json);
-        File.WriteAllText(Path.Combine(d, "b.csv"), "timestampUtc,machineName,userName,processName,isIdle\n2026-01-01T00:00:01Z,m,u,B,false\n");
-        var zf = Path.Combine(d, "c.zip");
-        using (var z = ZipFile.Open(zf, ZipArchiveMode.Create))
-        {
-            var e = z.CreateEntry("c.jsonl");
-            using var w = new StreamWriter(e.Open());
-            w.Write(json);
-        }
+        var d = CreateTempDirectory();
+        File.WriteAllText(Path.Combine(d, "events-20260627.jsonl"), JsonEvent("2026-06-27T10:00:00Z", "chrome", "CRM") + Environment.NewLine);
 
-        var r = new LogReader().Read(d);
-        Assert.Equal(2, r.Events.Count);
+        var result = new LogReader().Read(d);
+
+        var ev = Assert.Single(result.Events);
+        Assert.Equal("chrome", ev.ProcessName);
+        Assert.Equal("CRM", ev.WindowTitle);
+    }
+
+    [Fact]
+    public void ReadsCsvWhenJsonlIsMissing()
+    {
+        var d = CreateTempDirectory();
+        File.WriteAllText(Path.Combine(d, "events.csv"), CsvHeader + "2026-06-27T10:00:00Z,m,u,active_window_tick,EXCEL,42,Report,30,shot.png\n");
+
+        var result = new LogReader().Read(d);
+
+        var ev = Assert.Single(result.Events);
+        Assert.Equal("EXCEL", ev.ProcessName);
+        Assert.Equal("Report", ev.WindowTitle);
+        Assert.Equal(30, ev.DurationSeconds);
+    }
+
+    [Fact]
+    public void ReadsZipArchive()
+    {
+        var d = CreateTempDirectory();
+        CreateZipWithJsonl(Path.Combine(d, "archive.zip"), JsonEvent("2026-06-27T10:01:00Z", "EXCEL", "Report"));
+
+        var result = new LogReader().Read(d);
+
+        var ev = Assert.Single(result.Events);
+        Assert.Equal("EXCEL", ev.ProcessName);
+        Assert.Equal("Report", ev.WindowTitle);
+    }
+
+    [Fact]
+    public void PrefersJsonlOverCsvForSamePeriod()
+    {
+        var d = CreateTempDirectory();
+        File.WriteAllText(Path.Combine(d, "events-20260627.jsonl"), JsonEvent("2026-06-27T10:00:00Z", "chrome", "CRM") + Environment.NewLine);
+        File.WriteAllText(Path.Combine(d, "events.csv"), CsvHeader + "2026-06-27T10:00:00Z,m,u,active_window_tick,chrome,42,CRM,30,shot.png\n");
+
+        var result = new LogReader().Read(d);
+
+        var ev = Assert.Single(result.Events);
+        Assert.Equal("chrome", ev.ProcessName);
+        Assert.Equal("CRM", ev.WindowTitle);
+        Assert.Equal(0, ev.DuplicatesRemoved);
+    }
+
+    [Fact]
+    public void DeduplicatesSameEventAcrossSources()
+    {
+        var d = CreateTempDirectory();
+        var json = JsonEvent("2026-06-27T10:00:00Z", "chrome", "CRM");
+        File.WriteAllText(Path.Combine(d, "events-20260627.jsonl"), json + Environment.NewLine);
+        CreateZipWithJsonl(Path.Combine(d, "archive.zip"), json);
+
+        var result = new LogReader().Read(d);
+
+        var ev = Assert.Single(result.Events);
+        Assert.Equal("chrome", ev.ProcessName);
+        Assert.True(ev.DuplicatesRemoved >= 1);
+    }
+
+    [Fact]
+    public void ReadsDistinctEventsAcrossSources()
+    {
+        var d = CreateTempDirectory();
+        File.WriteAllText(Path.Combine(d, "events-20260627.jsonl"), JsonEvent("2026-06-27T10:00:00Z", "chrome", "CRM") + Environment.NewLine);
+        File.WriteAllText(Path.Combine(d, "events.csv"), CsvHeader + "2026-06-27T10:00:00Z,m,u,active_window_tick,chrome,42,CRM,30,shot.png\n");
+        CreateZipWithJsonl(Path.Combine(d, "archive.zip"), JsonEvent("2026-06-27T10:01:00Z", "EXCEL", "Report"));
+
+        var result = new LogReader().Read(d);
+
+        Assert.Equal(2, result.Events.Count);
+        Assert.Contains(result.Events, e => e.ProcessName == "chrome" && e.WindowTitle == "CRM");
+        Assert.Contains(result.Events, e => e.ProcessName == "EXCEL" && e.WindowTitle == "Report");
     }
 
     [Fact]
@@ -108,6 +173,27 @@ public sealed class AnalyzerTests
         Assert.NotEmpty(r.AutomationOpportunities);
         Assert.InRange(r.AutomationOpportunities[0].AutomationScore,0,100);
         Assert.Contains("гипотез", r.AutomationOpportunities[0].Rationale);
+    }
+
+
+    private const string CsvHeader = "timestampUtc,machineName,userName,eventType,processName,processId,windowTitle,durationSeconds,screenshotFile\n";
+
+    private static string CreateTempDirectory()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
+    private static string JsonEvent(string timestampUtc, string processName, string windowTitle) =>
+        $"{{\"timestampUtc\":\"{timestampUtc}\",\"machineName\":\"m\",\"userName\":\"u\",\"eventType\":\"active_window_tick\",\"processName\":\"{processName}\",\"processId\":42,\"windowTitle\":\"{windowTitle}\",\"durationSeconds\":30,\"screenshotFile\":\"shot.png\",\"isIdle\":false}}";
+
+    private static void CreateZipWithJsonl(string path, string json)
+    {
+        using var zip = ZipFile.Open(path, ZipArchiveMode.Create);
+        var entry = zip.CreateEntry("events-20260627.jsonl");
+        using var writer = new StreamWriter(entry.Open());
+        writer.WriteLine(json);
     }
 
     private static LogEvent E(string p, int sec, double? dur, bool idle = false) =>
