@@ -9,7 +9,12 @@ public sealed record AgentConfig
     public int IdleThresholdSeconds { get; init; } = 60;
     public bool EnableScreenshots { get; init; } = true;
     public int ScreenshotIntervalSeconds { get; init; } = 300;
-    public bool MaskWindowTitles { get; init; } = true;
+    public PrivacyConfig? Privacy { get; init; } = new();
+    public bool? CaptureWindowTitle { get; init; }
+    public bool MaskWindowTitle { get; init; }
+    public bool MaskWindowTitles { get; init; }
+    public string[] ExcludedProcesses { get; init; } = Array.Empty<string>();
+    public string[] ExcludedTitleContains { get; init; } = Array.Empty<string>();
     public bool HashUserName { get; init; } = true;
     public int ArchiveAfterDays { get; init; } = 7;
     public int RetainArchivesDays { get; init; } = 90;
@@ -28,6 +33,12 @@ public sealed record AgentConfig
         }
 
         var json = File.ReadAllText(path);
-        return JsonSerializer.Deserialize<AgentConfig>(json, JsonOptions) ?? new AgentConfig();
+        var config = JsonSerializer.Deserialize<AgentConfig>(json, JsonOptions) ?? new AgentConfig();
+        using var document = JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty("privacy", out var privacy) || !privacy.TryGetProperty("windowTitleMode", out _))
+        {
+            config = config with { Privacy = null };
+        }
+        return config;
     }
 }

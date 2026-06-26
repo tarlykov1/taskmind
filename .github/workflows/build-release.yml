@@ -39,9 +39,12 @@ jobs:
       - name: Verify dist
         shell: pwsh
         run: |
-          if (!(Test-Path dist/GSPTaskMiningAgent.exe)) { throw 'missing exe' }
+          if (!(Test-Path dist/GSPTaskMiningAgent.exe)) { throw 'missing agent exe' }
+          if (!(Test-Path dist/GSPTaskMiningAnalyzer.exe)) { throw 'missing analyzer exe' }
           if (!(Test-Path dist/GSPTaskMiningAgentPortable.zip)) { throw 'missing portable zip' }
           tar -tf dist/GSPTaskMiningAgentPortable.zip | Select-String 'GSPTaskMiningAgent.exe'
+          tar -tf dist/GSPTaskMiningAgentPortable.zip | Select-String 'GSPTaskMiningAnalyzer.exe'
+          tar -tf dist/GSPTaskMiningAgentPortable.zip | Select-String 'ANALYZE_LOGS.cmd'
       - name: Commit dist
         shell: pwsh
         run: |
@@ -63,4 +66,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "pilot-${{ github.run_number }}" dist/GSPTaskMiningAgent.exe dist/GSPTaskMiningAgentPortable.zip dist/SHA256SUMS.txt --target "${{ github.sha }}" --title "GSPTaskMiningAgent pilot ${{ github.run_number }}" --notes "Self-contained Windows x64 portable build." --latest
+          gh release create "pilot-${{ github.run_number }}" dist/GSPTaskMiningAgent.exe dist/GSPTaskMiningAnalyzer.exe dist/GSPTaskMiningAgentPortable.zip dist/SHA256SUMS.txt --target "${{ github.sha }}" --title "GSPTaskMiningAgent pilot ${{ github.run_number }}" --notes "Self-contained Windows x64 portable build." --latest

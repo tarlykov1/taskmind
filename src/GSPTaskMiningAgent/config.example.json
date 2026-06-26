@@ -3,8 +3,10 @@
   "idleThresholdSeconds": 60,
   "enableScreenshots": true,
   "screenshotIntervalSeconds": 300,
-  "maskWindowTitles": true,
+  "privacy": { "windowTitleMode": "plain" },
   "hashUserName": true,
+  "excludedProcesses": [],
+  "excludedTitleContains": [],
   "archiveAfterDays": 7,
   "retainArchivesDays": 90,
   "csvFileName": "events.csv"

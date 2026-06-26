@@ -11,9 +11,9 @@ public static class CsvEventWriter
         using var writer = new StreamWriter(stream, new UTF8Encoding(false));
         if (isNew)
         {
-            writer.WriteLine("timestampUtc,machineName,userName,processName,windowTitle,isIdle,screenshotFile");
+            writer.WriteLine("eventType,timestampUtc,timestampLocal,machineName,userName,processName,processId,windowTitle,browserDomain,isIdle,durationSeconds,screenshotFile,screenshotReason");
         }
-        writer.WriteLine(string.Join(',', Escape(record.TimestampUtc.ToString("O")), Escape(record.MachineName), Escape(record.UserName), Escape(record.ProcessName), Escape(record.WindowTitle), record.IsIdle ? "true" : "false", Escape(record.ScreenshotFile ?? "")));
+        writer.WriteLine(string.Join(',', Escape(record.EventType), Escape(record.TimestampUtc.ToString("O")), Escape(record.TimestampLocal.ToString("O")), Escape(record.MachineName), Escape(record.UserName), Escape(record.ProcessName), record.ProcessId.ToString(), Escape(record.WindowTitle), Escape(record.BrowserDomain), record.IsIdle ? "true" : "false", record.DurationSeconds?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "", Escape(record.ScreenshotFile ?? ""), Escape(record.ScreenshotReason ?? "")));
     }
 
     private static string Escape(string value)
