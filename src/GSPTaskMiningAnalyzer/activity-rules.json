@@ -1,0 +1,1 @@
+{"rules":[{"activity":"Работа в Excel","process":"EXCEL","titleRegex":".*","category":"Офис","processGroup":"Microsoft Office"},{"activity":"Работа с заявкой в Битрикс24","process":"chrome","titleRegex":".*Битрикс24.*","category":"CRM","processGroup":"Браузер"}]}
