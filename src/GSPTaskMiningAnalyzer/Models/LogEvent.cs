@@ -1,0 +1,2 @@
+namespace GSPTaskMiningAnalyzer.Models;
+public sealed record LogEvent(string EventType, DateTimeOffset TimestampUtc, DateTimeOffset TimestampLocal, string MachineName, string UserName, string ProcessName, int ProcessId, string WindowTitle, string BrowserDomain, bool IsIdle, double? DurationSeconds, string? ScreenshotFile, string? ScreenshotReason, string SourceFile);

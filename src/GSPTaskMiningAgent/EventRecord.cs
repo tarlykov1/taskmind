@@ -1,10 +1,16 @@
 namespace GSPTaskMiningAgent;
 
 public sealed record EventRecord(
+    string EventType,
     DateTimeOffset TimestampUtc,
+    DateTimeOffset TimestampLocal,
     string MachineName,
     string UserName,
     string ProcessName,
+    int ProcessId,
     string WindowTitle,
+    string BrowserDomain,
     bool IsIdle,
-    string? ScreenshotFile);
+    double? DurationSeconds,
+    string? ScreenshotFile,
+    string? ScreenshotReason);

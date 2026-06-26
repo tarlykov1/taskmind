@@ -45,18 +45,20 @@ internal static class Program
         var config = AgentConfig.LoadOrCreate(paths.ConfigFile);
         var screenshots = new ScreenshotService();
         if (File.Exists(paths.StopFile)) File.Delete(paths.StopFile);
+        AppendEvent(paths, config, SystemEvent("agent_start", config));
 
         do
         {
             WriteStatus(paths, "running");
             var screenshotFile = screenshots.CaptureIfDue(paths, config);
-            var record = CaptureEvent(config, screenshotFile);
+            var record = CaptureEvent(paths, config, screenshotFile);
             AppendEvent(paths, config, record);
             ArchiveService.Run(paths, config, DateTimeOffset.UtcNow);
             if (once) break;
             Thread.Sleep(TimeSpan.FromSeconds(Math.Max(1, config.PollIntervalSeconds)));
         } while (!File.Exists(paths.StopFile));
 
+        AppendEvent(paths, config, SystemEvent("agent_stop", config));
         WriteStatus(paths, "stopped");
         return 0;
     }
@@ -67,7 +69,7 @@ internal static class Program
         paths.EnsureAll();
         _ = AgentConfig.LoadOrCreate(paths.ConfigFile);
         var config = new AgentConfig();
-        AppendEvent(paths, config, CaptureEvent(config, null));
+        AppendEvent(paths, config, CaptureEvent(paths, config, null));
         WriteStatus(paths, "self-test-ok");
 
         var checks = new[] { paths.ConfigFile, paths.StatusFile };
@@ -84,10 +86,18 @@ internal static class Program
         return 2;
     }
 
-    private static EventRecord CaptureEvent(AgentConfig config, string? screenshotFile)
+    private static EventRecord SystemEvent(string eventType, AgentConfig config)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var user = config.HashUserName ? Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Environment.UserName))).ToLowerInvariant() : Environment.UserName;
+        return new EventRecord(eventType, now, now.ToLocalTime(), Environment.MachineName, user, string.Empty, 0, string.Empty, string.Empty, false, null, null, null);
+    }
+
+    private static EventRecord CaptureEvent(AgentPaths paths, AgentConfig config, string? screenshotFile)
     {
         var processName = "unknown";
         var title = "";
+        var processId = 0;
         if (OperatingSystem.IsWindows())
         {
             var handle = GetForegroundWindow();
@@ -95,6 +105,7 @@ internal static class Program
             {
                 var pid = 0u;
                 _ = GetWindowThreadProcessId(handle, out pid);
+                processId = (int)pid;
                 try { processName = Process.GetProcessById((int)pid).ProcessName; } catch { processName = "unknown"; }
                 var builder = new StringBuilder(512);
                 _ = GetWindowText(handle, builder, builder.Capacity);
@@ -108,13 +119,11 @@ internal static class Program
             user = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(user))).ToLowerInvariant();
         }
 
-        if (config.MaskWindowTitles && title.Length > 0)
-        {
-            title = $"masked:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(title))).ToLowerInvariant()[..16]}";
-        }
+        title = WindowTitlePrivacy.Apply(title, processName, config, warning => LogWarning(paths, warning));
 
         var isIdle = IdleDetector.IsIdle(TimeSpan.FromSeconds(Math.Max(1, config.IdleThresholdSeconds)));
-        return new EventRecord(DateTimeOffset.UtcNow, Environment.MachineName, user, processName, title, isIdle, screenshotFile);
+        var now = DateTimeOffset.UtcNow;
+        return new EventRecord("active_window_tick", now, now.ToLocalTime(), Environment.MachineName, user, processName, processId, title, ExtractBrowserDomain(title), isIdle, Math.Max(1, config.PollIntervalSeconds), screenshotFile, screenshotFile is null ? null : "interval");
     }
 
     private static void AppendEvent(AgentPaths paths, AgentConfig config, EventRecord record)
@@ -126,7 +135,20 @@ internal static class Program
 
     private static void WriteStatus(AgentPaths paths, string state)
     {
-        File.WriteAllText(paths.StatusFile, $"state={state}{Environment.NewLine}utc={DateTimeOffset.UtcNow:O}{Environment.NewLine}");
+        var config = AgentConfig.LoadOrCreate(paths.ConfigFile);
+        File.WriteAllText(paths.StatusFile, $"state={state}{Environment.NewLine}utc={DateTimeOffset.UtcNow:O}{Environment.NewLine}WINDOW_TITLE_MODE={WindowTitlePrivacy.Resolve(config).ToString().ToLowerInvariant()}{Environment.NewLine}");
+    }
+
+    private static void LogWarning(AgentPaths paths, string warning)
+    {
+        paths.EnsureAll();
+        File.AppendAllText(Path.Combine(paths.Errors, $"warnings-{DateTimeOffset.UtcNow:yyyyMMdd}.log"), $"{DateTimeOffset.UtcNow:O} {warning}{Environment.NewLine}");
+    }
+
+    private static string ExtractBrowserDomain(string title)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(title, @"https?://(?<host>[a-z0-9.-]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups["host"].Value.ToLowerInvariant() : string.Empty;
     }
 
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
