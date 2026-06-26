@@ -13,4 +13,7 @@ public sealed record EventRecord(
     bool IsIdle,
     double? DurationSeconds,
     string? ScreenshotFile,
-    string? ScreenshotReason);
+    string? ScreenshotReason,
+    string? CaseId = null,
+    string? ProcessLabel = null,
+    string? OperationLabel = null);

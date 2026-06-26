@@ -29,7 +29,7 @@ public sealed class AnalyzerTests
         Assert.Equal(15, r.ActiveSeconds);
         Assert.Equal(5, r.IdleSeconds);
         Assert.Contains("A → B", r.Chains2.Keys);
-        Assert.Contains("A → B → C", r.Chains3.Keys);
+        Assert.DoesNotContain("A → B → C", r.Chains3.Keys);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public sealed class AnalyzerTests
         }
 
         var r = new LogReader().Read(d);
-        Assert.Equal(3, r.Events.Count);
+        Assert.Equal(2, r.Events.Count);
     }
 
     [Fact]
@@ -89,6 +89,25 @@ public sealed class AnalyzerTests
         Assert.Contains("Документ Пример", html);
         Assert.DoesNotContain("__REPORT_JSON__", html);
         Assert.DoesNotContain("__GENERATED_AT__", html);
+    }
+
+
+    [Fact]
+    public void LockAppIsLockedAndChromeTicksAreOneSession()
+    {
+        var r = new StatisticsService().Analyze(new[] { E("chrome",0,5), E("chrome",5,5), E("LockApp",10,5) });
+        Assert.Equal(2, r.Sessions.Count);
+        Assert.Equal(5, r.LockedSeconds);
+        Assert.Empty(r.Chains2);
+    }
+
+    [Fact]
+    public void AutomationOpportunityHasExplainableScore()
+    {
+        var r = new StatisticsService().Analyze(new[] { E("A",0,5), E("B",5,5), E("A",10,5), E("B",15,5) });
+        Assert.NotEmpty(r.AutomationOpportunities);
+        Assert.InRange(r.AutomationOpportunities[0].AutomationScore,0,100);
+        Assert.Contains("гипотез", r.AutomationOpportunities[0].Rationale);
     }
 
     private static LogEvent E(string p, int sec, double? dur, bool idle = false) =>

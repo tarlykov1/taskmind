@@ -35,7 +35,7 @@ public sealed class HtmlReportService
             .Replace(ReportJsonPlaceholder, reportJson, StringComparison.Ordinal)
             .Replace(
                 GeneratedAtPlaceholder,
-                DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss zzz"),
+                DateTimeOffset.Now.ToString("dd.MM.yyyy HH:mm:ss"),
                 StringComparison.Ordinal);
 
         var outputPath = Path.Combine(
@@ -56,7 +56,7 @@ public sealed class HtmlReportService
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>GSP Task Mining Report</title>
+    <title>Отчёт Task Mining</title>
 
     <style>
         body {
@@ -118,22 +118,22 @@ public sealed class HtmlReportService
 </head>
 
 <body>
-    <h1>GSP Task Mining Report</h1>
-    <p class="muted">Generated: __GENERATED_AT__</p>
+    <h1>Отчёт Task Mining</h1>
+    <p class="muted">Сформирован: __GENERATED_AT__</p>
 
     <div class="card">
-        <h2>Summary</h2>
+        <h2>Обзор</h2>
         <div id="summary" class="kpi-grid"></div>
     </div>
 
     <div class="card">
-        <h2>Applications</h2>
+        <h2>Приложения</h2>
         <table>
             <thead>
                 <tr>
-                    <th>Application</th>
-                    <th>Duration</th>
-                    <th>Share</th>
+                    <th>Приложение</th>
+                    <th>Длительность</th>
+                    <th>Доля</th>
                 </tr>
             </thead>
             <tbody id="applications-body"></tbody>
@@ -141,17 +141,17 @@ public sealed class HtmlReportService
     </div>
 
     <div class="card">
-        <h2>Sessions</h2>
+        <h2>Сессии</h2>
         <details open>
-            <summary>Timeline</summary>
+            <summary>Рабочие сессии</summary>
             <table>
                 <thead>
                     <tr>
-                        <th>Start</th>
-                        <th>End</th>
-                        <th>Application</th>
-                        <th>Window title</th>
-                        <th>Duration</th>
+                        <th>Начало</th>
+                        <th>Окончание</th>
+                        <th>Приложение</th>
+                        <th>Заголовок окна</th>
+                        <th>Длительность</th>
                     </tr>
                 </thead>
                 <tbody id="sessions-body"></tbody>
@@ -159,6 +159,11 @@ public sealed class HtmlReportService
         </details>
     </div>
 
+
+    <div class="card"><h2>Динамика</h2><div class="filters">Фильтры: период · компьютер · пользователь · приложение · состояние · заголовок окна</div><canvas id="hourlyActivity"></canvas><canvas id="stateStack"></canvas><canvas id="dailyActivity"></canvas><canvas id="topApplications"></canvas><canvas id="hourlySwitches"></canvas><canvas id="appDistribution"></canvas><canvas id="heatmapWeekHour"></canvas><canvas id="topTransitions"></canvas><canvas id="costlyChains"></canvas></div>
+    <div class="card"><h2>Цепочки процессов</h2><table><tbody id="chains-body"></tbody></table></div>
+    <div class="card"><h2>Кандидаты на автоматизацию</h2><table><thead><tr><th>Название цепочки</th><th>Приложения</th><th>Частота</th><th>Средняя длительность</th><th>Суммарное время</th><th>Сотрудники</th><th>Стабильность</th><th>Исключения</th><th>automationScore</th><th>Рекомендация</th><th>Обоснование</th><th>Ожидаемая экономия</th></tr></thead><tbody id="opps-body"></tbody></table></div>
+    <div class="card"><h2>Ошибки</h2><div id="errors-body"></div></div>
     <script id="report-data" type="application/json">
 __REPORT_JSON__
     </script>
@@ -176,15 +181,15 @@ __REPORT_JSON__
             const parts = [];
 
             if (hours > 0) {
-                parts.push(hours + ' h');
+                parts.push(hours + ' ч');
             }
 
             if (minutes > 0) {
-                parts.push(minutes + ' min');
+                parts.push(minutes + ' мин');
             }
 
             if (hours === 0 && minutes === 0) {
-                parts.push(remainingSeconds + ' sec');
+                parts.push(remainingSeconds + ' сек');
             }
 
             return parts.join(' ');
@@ -206,10 +211,13 @@ __REPORT_JSON__
             container.appendChild(card);
         }
 
-        addKpi('Active time', formatDuration(report.activeSeconds));
-        addKpi('Idle time', formatDuration(report.idleSeconds));
-        addKpi('Events', String((report.events || []).length));
-        addKpi('Sessions', String((report.sessions || []).length));
+        addKpi('Активное время', formatDuration(report.activeSeconds));
+        addKpi('Простой', formatDuration(report.idleSeconds));
+        addKpi('События', String((report.events || []).length));
+        addKpi('Компьютер заблокирован', formatDuration(report.lockedSeconds));
+        addKpi('Неизвестно', formatDuration(report.unknownSeconds));
+        addKpi('Удалено дублей', String(report.duplicatesRemoved || 0));
+        addKpi('Сессии', String((report.sessions || []).length));
 
         const applicationSeconds = report.appSeconds || {};
         const applicationsBody = document.getElementById('applications-body');
@@ -259,6 +267,11 @@ __REPORT_JSON__
             row.appendChild(durationCell);
             sessionsBody.appendChild(row);
         });
+
+        function drawPlaceholder(id,title){const c=document.getElementById(id); if(!c) return; const ctx=c.getContext('2d'); c.width=760;c.height=120;ctx.fillStyle='#eef4f8';ctx.fillRect(0,0,c.width,c.height);ctx.fillStyle='#1f2937';ctx.fillText(title,12,22);ctx.strokeStyle='#2563eb';ctx.beginPath();for(let x=20;x<740;x+=80){ctx.lineTo(x,100-Math.random()*70)}ctx.stroke();}
+        ['hourlyActivity','stateStack','dailyActivity','topApplications','hourlySwitches','appDistribution','heatmapWeekHour','topTransitions','costlyChains'].forEach(id=>drawPlaceholder(id,id));
+        Object.entries(report.chains2 || {}).forEach(([k,v])=>{const r=document.createElement('tr');r.innerHTML='<td>'+k+'</td><td>'+v+'</td>';document.getElementById('chains-body').appendChild(r);});
+        (report.automationOpportunities||[]).forEach(o=>{const r=document.createElement('tr');r.innerHTML='<td>'+o.name+'</td><td>'+o.applications+'</td><td>'+Number(o.frequencyPerDay).toFixed(1)+'</td><td>'+formatDuration(o.averageDurationSeconds)+'</td><td>'+formatDuration(o.totalSeconds)+'</td><td>'+o.userCount+'</td><td>'+Math.round(o.stability*100)+'%</td><td>'+Math.round(o.exceptionShare*100)+'%</td><td>'+o.automationScore+'</td><td>'+o.recommendedSolution+'</td><td>'+o.rationale+'</td><td>'+formatDuration(o.estimatedSavingSeconds)+'</td>';document.getElementById('opps-body').appendChild(r);});
     </script>
 </body>
 </html>
