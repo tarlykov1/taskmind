@@ -17,9 +17,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-dotnet@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: "8.0.x"
+      - name: Show .NET SDK
+        shell: pwsh
+        run: |
+          dotnet --version
+          dotnet --info
+      - name: Verify .NET 8
+        shell: pwsh
+        run: |
+          $version = dotnet --version
+          if (-not $version.StartsWith("8.0.")) {
+            throw "Expected .NET 8 SDK, actual SDK: $version"
+          }
       - name: Build, test, publish and package
         shell: pwsh
         run: pwsh -File tools/build-portable.ps1
