@@ -1,8 +1,11 @@
 {
   "pollIntervalSeconds": 5,
-  "enableScreenshots": false,
+  "idleThresholdSeconds": 60,
+  "enableScreenshots": true,
   "screenshotIntervalSeconds": 300,
   "maskWindowTitles": true,
   "hashUserName": true,
-  "archiveAfterDays": 7
+  "archiveAfterDays": 7,
+  "retainArchivesDays": 90,
+  "csvFileName": "events.csv"
 }

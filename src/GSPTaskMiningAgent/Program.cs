@@ -43,13 +43,16 @@ internal static class Program
     {
         paths.EnsureAll();
         var config = AgentConfig.LoadOrCreate(paths.ConfigFile);
+        var screenshots = new ScreenshotService();
         if (File.Exists(paths.StopFile)) File.Delete(paths.StopFile);
 
         do
         {
             WriteStatus(paths, "running");
-            var record = CaptureEvent(config);
-            AppendEvent(paths, record);
+            var screenshotFile = screenshots.CaptureIfDue(paths, config);
+            var record = CaptureEvent(config, screenshotFile);
+            AppendEvent(paths, config, record);
+            ArchiveService.Run(paths, config, DateTimeOffset.UtcNow);
             if (once) break;
             Thread.Sleep(TimeSpan.FromSeconds(Math.Max(1, config.PollIntervalSeconds)));
         } while (!File.Exists(paths.StopFile));
@@ -63,7 +66,8 @@ internal static class Program
         var deadline = DateTimeOffset.UtcNow.AddSeconds(MaxSelfTestSeconds);
         paths.EnsureAll();
         _ = AgentConfig.LoadOrCreate(paths.ConfigFile);
-        AppendEvent(paths, CaptureEvent(new AgentConfig()));
+        var config = new AgentConfig();
+        AppendEvent(paths, config, CaptureEvent(config, null));
         WriteStatus(paths, "self-test-ok");
 
         var checks = new[] { paths.ConfigFile, paths.StatusFile };
@@ -80,7 +84,7 @@ internal static class Program
         return 2;
     }
 
-    private static EventRecord CaptureEvent(AgentConfig config)
+    private static EventRecord CaptureEvent(AgentConfig config, string? screenshotFile)
     {
         var processName = "unknown";
         var title = "";
@@ -109,13 +113,15 @@ internal static class Program
             title = $"masked:{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(title))).ToLowerInvariant()[..16]}";
         }
 
-        return new EventRecord(DateTimeOffset.UtcNow, Environment.MachineName, user, processName, title, false);
+        var isIdle = IdleDetector.IsIdle(TimeSpan.FromSeconds(Math.Max(1, config.IdleThresholdSeconds)));
+        return new EventRecord(DateTimeOffset.UtcNow, Environment.MachineName, user, processName, title, isIdle, screenshotFile);
     }
 
-    private static void AppendEvent(AgentPaths paths, EventRecord record)
+    private static void AppendEvent(AgentPaths paths, AgentConfig config, EventRecord record)
     {
         var file = Path.Combine(paths.Logs, $"events-{DateTimeOffset.UtcNow:yyyyMMdd}.jsonl");
         File.AppendAllText(file, JsonSerializer.Serialize(record, AgentConfig.JsonOptions).ReplaceLineEndings("") + Environment.NewLine);
+        CsvEventWriter.Append(Path.Combine(paths.Logs, config.CsvFileName), record);
     }
 
     private static void WriteStatus(AgentPaths paths, string state)

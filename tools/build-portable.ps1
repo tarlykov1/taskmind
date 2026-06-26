@@ -12,7 +12,10 @@ New-Item -ItemType Directory -Path $portable,$dist | Out-Null
 Copy-Item (Join-Path $publish 'GSPTaskMiningAgent.exe') $portable
 Copy-Item (Join-Path $root 'src/GSPTaskMiningAgent/config.example.json') $portable
 Copy-Item (Join-Path $root 'packaging/*') $portable
-Compress-Archive -Path (Join-Path $portable '*') -DestinationPath (Join-Path $root 'artifacts/GSPTaskMiningAgentPortable.zip') -Force
+$zip = Join-Path $root 'artifacts/GSPTaskMiningAgentPortable.zip'
+Compress-Archive -Path (Join-Path $portable '*') -DestinationPath $zip -Force
+$zipList = tar -tf $zip
+foreach ($required in @('GSPTaskMiningAgent.exe','START_AGENT.cmd','ENABLE_AUTOSTART.cmd','DISABLE_AUTOSTART.cmd')) { if (-not ($zipList -match $required)) { throw "Portable ZIP missing $required" } }
 Copy-Item (Join-Path $publish 'GSPTaskMiningAgent.exe') (Join-Path $dist 'GSPTaskMiningAgent.exe')
 Copy-Item (Join-Path $root 'artifacts/GSPTaskMiningAgentPortable.zip') (Join-Path $dist 'GSPTaskMiningAgentPortable.zip')
 Get-FileHash (Join-Path $dist 'GSPTaskMiningAgent.exe'),(Join-Path $dist 'GSPTaskMiningAgentPortable.zip') -Algorithm SHA256 | ForEach-Object { "$($_.Hash.ToLowerInvariant())  $(Split-Path $_.Path -Leaf)" } | Set-Content (Join-Path $dist 'SHA256SUMS.txt') -Encoding ascii

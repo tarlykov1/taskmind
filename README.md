@@ -1,6 +1,6 @@
 # GSPTaskMiningAgent
 
-Fresh implementation of a portable Windows task-mining agent.
+Portable Windows task-mining agent rebuilt from scratch.
 
 ## Build on Windows
 
@@ -8,17 +8,31 @@ Fresh implementation of a portable Windows task-mining agent.
 pwsh -File tools/build-portable.ps1
 ```
 
-The build script runs unit tests, publishes a self-contained `win-x64` single-file executable, runs `--self-test`, creates `GSPTaskMiningAgentPortable.zip`, and fills `dist`.
+The script runs unit tests, publishes a self-contained `win-x64` single-file `GSPTaskMiningAgent.exe`, runs `--self-test`, creates `GSPTaskMiningAgentPortable.zip`, and fills `dist`.
 
-## Runtime
+## Portable package
 
-The executable creates `config.json` and these local data folders on first run:
+The ZIP contains:
+
+- `GSPTaskMiningAgent.exe`
+- `START_AGENT.cmd`
+- `ENABLE_AUTOSTART.cmd`
+- `DISABLE_AUTOSTART.cmd`
+- PowerShell equivalents
+- `config.example.json`
+- `README.txt`
+
+## Runtime output
+
+The executable creates `config.json` and these local data paths on first run:
 
 ```text
-data/logs
+data/agent-status.txt
+data/logs/events-YYYYMMDD.jsonl
+data/logs/events.csv
 data/screenshots
 data/archives
 data/errors
 ```
 
-No administrator permissions are required. Data is written next to the executable.
+See `docs/` for pilot, security, and analyzer instructions.

@@ -6,4 +6,5 @@ public sealed record EventRecord(
     string UserName,
     string ProcessName,
     string WindowTitle,
-    bool IsIdle);
+    bool IsIdle,
+    string? ScreenshotFile);
