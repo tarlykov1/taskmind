@@ -13,8 +13,19 @@ public sealed class ConfigTests
         var path = Path.Combine(dir, "config.json");
         var config = AgentConfig.LoadOrCreate(path);
         Assert.True(File.Exists(path));
-        Assert.True(config.MaskWindowTitles);
+        Assert.Equal(WindowTitleMode.Plain, WindowTitlePrivacy.Resolve(config));
         Assert.True(config.HashUserName);
+    }
+
+    [Fact]
+    public void WindowTitleModesWork()
+    {
+        Assert.Equal("Secret", WindowTitlePrivacy.Apply("Secret", "app", new AgentConfig { Privacy = new PrivacyConfig { WindowTitleMode = "plain" } }));
+        Assert.StartsWith("masked:", WindowTitlePrivacy.Apply("Secret", "app", new AgentConfig { Privacy = new PrivacyConfig { WindowTitleMode = "masked" } }));
+        Assert.Equal("", WindowTitlePrivacy.Apply("Secret", "app", new AgentConfig { Privacy = new PrivacyConfig { WindowTitleMode = "off" } }));
+        Assert.Equal("", WindowTitlePrivacy.Apply("Secret", "app", new AgentConfig { ExcludedProcesses = new[] { "app" } }));
+        Assert.Equal(WindowTitleMode.Off, WindowTitlePrivacy.Resolve(new AgentConfig { Privacy = null, CaptureWindowTitle = false }));
+        Assert.Equal(WindowTitleMode.Masked, WindowTitlePrivacy.Resolve(new AgentConfig { Privacy = null, CaptureWindowTitle = true, MaskWindowTitle = true }));
     }
 
     [Fact]
