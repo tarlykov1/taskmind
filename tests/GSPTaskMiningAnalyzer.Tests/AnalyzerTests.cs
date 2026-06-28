@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.Json;
 using GSPTaskMiningAnalyzer;
 using GSPTaskMiningAnalyzer.Models;
 using Xunit;
@@ -11,14 +12,55 @@ public sealed class AnalyzerTests
     public void DurationLimitsLargeGaps()
     {
         var d = new DurationCalculator { MaxGapSeconds = 60 }.Calculate(new[] { E("A", 0, null), E("A", 120, null) });
-        Assert.Equal(60, d[0].Seconds);
+        Assert.Equal(60, d[0].DurationSeconds);
     }
 
     [Fact]
     public void UsesDurationSeconds()
     {
         var d = new DurationCalculator().Calculate(new[] { E("A", 0, 12d) });
-        Assert.Equal(12, d[0].Seconds);
+        Assert.Equal(12, d[0].DurationSeconds);
+    }
+
+
+    [Fact]
+    public void DurationCalculatorReturnsOriginalEventAndCalculatedDuration()
+    {
+        var sourceEvent = E("A", 0, 12d);
+
+        var calculated = new DurationCalculator().Calculate(new[] { sourceEvent });
+
+        var item = Assert.Single(calculated);
+        Assert.Same(sourceEvent, item.Event);
+        Assert.Equal(12, item.DurationSeconds);
+    }
+
+    [Fact]
+    public void DurationCalculatorLimitsDurationByNextEvent()
+    {
+        var calculated = new DurationCalculator { MaxGapSeconds = 60 }.Calculate(new[] { E("A", 0, 60d), E("B", 10, 60d) });
+
+        Assert.Equal(10, calculated[0].DurationSeconds);
+    }
+
+    [Fact]
+    public void DurationCalculatorDoesNotCreateNegativeDuration()
+    {
+        var calculated = new DurationCalculator { MaxGapSeconds = 60 }.Calculate(new[] { E("A", 10, 60d), E("B", 0, 60d) });
+
+        Assert.All(calculated, item => Assert.True(item.DurationSeconds >= 0));
+    }
+
+    [Fact]
+    public void DurationCalculatorKeepsUserSessionsSeparate()
+    {
+        var firstUserEvent = E("A", 0, null);
+        var secondUserEvent = E("B", 10, null) with { UserName = "u2" };
+
+        var calculated = new DurationCalculator { MaxGapSeconds = 60 }.Calculate(new[] { firstUserEvent, secondUserEvent });
+
+        Assert.Equal(60, calculated.Single(item => item.Event.UserName == "u").DurationSeconds);
+        Assert.Equal(60, calculated.Single(item => item.Event.UserName == "u2").DurationSeconds);
     }
 
     [Fact]
@@ -149,11 +191,18 @@ public sealed class AnalyzerTests
         var html = File.ReadAllText(htmlPath);
 
         Assert.True(File.Exists(htmlPath));
-        Assert.Contains("<!DOCTYPE html>", html);
+        Assert.Contains(
+            "<!doctype html>",
+            html,
+            StringComparison.OrdinalIgnoreCase);
         Assert.Contains("report-data", html);
-        Assert.Contains("Документ Пример", html);
+        using var document = JsonDocument.Parse(ExtractReportDataJson(html));
+        var windowTitles = ExtractWindowTitles(document.RootElement);
+        Assert.Contains("Документ Пример", windowTitles);
         Assert.DoesNotContain("__REPORT_JSON__", html);
         Assert.DoesNotContain("__GENERATED_AT__", html);
+        Assert.DoesNotContain("Math.random", html);
+        Assert.DoesNotContain("drawPlaceholder", html);
     }
 
 
@@ -224,6 +273,63 @@ public sealed class AnalyzerTests
         Assert.Contains("Объём данных недостаточен", r.DataQuality.Warning);
     }
 
+
+
+    private static string ExtractReportDataJson(string html)
+    {
+        const string script = "<script";
+        var searchStart = 0;
+        while (true)
+        {
+            var scriptStart = html.IndexOf(script, searchStart, StringComparison.OrdinalIgnoreCase);
+            if (scriptStart < 0) break;
+
+            var tagEnd = html.IndexOf('>', scriptStart);
+            if (tagEnd < 0) break;
+
+            var openingTag = html[scriptStart..tagEnd];
+            if (openingTag.Contains("report-data", StringComparison.OrdinalIgnoreCase))
+            {
+                var contentStart = tagEnd + 1;
+                var contentEnd = html.IndexOf("</script>", contentStart, StringComparison.OrdinalIgnoreCase);
+                Assert.True(contentEnd >= 0, "В HTML не найден закрывающий тег script для report-data.");
+                return html[contentStart..contentEnd].Trim();
+            }
+
+            searchStart = tagEnd + 1;
+        }
+
+        Assert.True(false, "В HTML не найден блок report-data.");
+        return string.Empty;
+    }
+
+    private static List<string> ExtractWindowTitles(JsonElement root)
+    {
+        var titles = new List<string>();
+
+        if (root.TryGetProperty("events", out var events))
+        {
+            AddWindowTitles(events, titles);
+        }
+
+        if (root.TryGetProperty("sessions", out var sessions))
+        {
+            AddWindowTitles(sessions, titles);
+        }
+
+        return titles;
+    }
+
+    private static void AddWindowTitles(JsonElement items, List<string> titles)
+    {
+        foreach (var item in items.EnumerateArray())
+        {
+            if (item.TryGetProperty("windowTitle", out var title))
+            {
+                titles.Add(title.GetString() ?? string.Empty);
+            }
+        }
+    }
 
     private const string CsvHeader = "timestampUtc,machineName,userName,eventType,processName,processId,windowTitle,durationSeconds,screenshotFile\n";
 
