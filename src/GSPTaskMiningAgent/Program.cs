@@ -10,6 +10,7 @@ internal static class Program
 {
     private const int MaxSelfTestSeconds = 20;
 
+    [STAThread]
     public static int Main(string[] args)
     {
         var root = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -29,6 +30,22 @@ internal static class Program
                 return 0;
             }
 
+            using var guard = new SingleInstanceGuard();
+            if (!guard.IsOwner)
+            {
+                Console.Error.WriteLine("Агент уже запущен");
+                return 3;
+            }
+            if (args.Contains("--tray-self-test", StringComparer.OrdinalIgnoreCase)) return RunTraySelfTest(paths);
+            if (OperatingSystem.IsWindows() && !args.Contains("--once", StringComparer.OrdinalIgnoreCase))
+            {
+                System.Windows.Forms.Application.SetHighDpiMode(System.Windows.Forms.HighDpiMode.SystemAware);
+                System.Windows.Forms.Application.EnableVisualStyles();
+                System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
+                using var context = new TrayApplicationContext(paths, args);
+                System.Windows.Forms.Application.Run(context);
+                return 0;
+            }
             return Run(paths, args.Contains("--once", StringComparer.OrdinalIgnoreCase));
         }
         catch (Exception ex)
@@ -39,7 +56,9 @@ internal static class Program
         }
     }
 
-    private static int Run(AgentPaths paths, bool once)
+    internal static int RunAgentLoop(AgentPaths paths, bool once, CancellationToken cancellationToken) => Run(paths, once, cancellationToken);
+
+    private static int Run(AgentPaths paths, bool once, CancellationToken cancellationToken = default)
     {
         paths.EnsureAll();
         var config = AgentConfig.LoadOrCreate(paths.ConfigFile);
@@ -56,7 +75,7 @@ internal static class Program
             ArchiveService.Run(paths, config, DateTimeOffset.UtcNow);
             if (once) break;
             Thread.Sleep(TimeSpan.FromSeconds(Math.Max(1, config.PollIntervalSeconds)));
-        } while (!File.Exists(paths.StopFile));
+        } while (!File.Exists(paths.StopFile) && !cancellationToken.IsCancellationRequested);
 
         AppendEvent(paths, config, SystemEvent("agent_stop", config));
         WriteStatus(paths, "stopped");
@@ -84,6 +103,22 @@ internal static class Program
         }
 
         return 2;
+    }
+
+    private static int RunTraySelfTest(AgentPaths paths)
+    {
+        paths.EnsureAll();
+        var file = Path.Combine(paths.Errors, "tray-self-test.txt");
+        File.WriteAllText(file, $"STA={Thread.CurrentThread.GetApartmentState()}\nmessageLoop=started\nicon=created\n");
+        if (OperatingSystem.IsWindows())
+        {
+            var timer = new System.Windows.Forms.Timer { Interval = 5000 };
+            timer.Tick += (_, _) => System.Windows.Forms.Application.ExitThread();
+            timer.Start();
+            using var icon = new System.Windows.Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Application, Visible = true, Text = "GSP tray self-test" };
+            System.Windows.Forms.Application.Run();
+        }
+        return 0;
     }
 
     private static EventRecord SystemEvent(string eventType, AgentConfig config)

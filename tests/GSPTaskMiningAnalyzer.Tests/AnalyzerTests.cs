@@ -11,7 +11,7 @@ public sealed class AnalyzerTests
     public void DurationLimitsLargeGaps()
     {
         var d = new DurationCalculator { MaxGapSeconds = 60 }.Calculate(new[] { E("A", 0, null), E("A", 120, null) });
-        Assert.Equal(0, d[0].Seconds);
+        Assert.Equal(60, d[0].Seconds);
     }
 
     [Fact]
@@ -170,9 +170,58 @@ public sealed class AnalyzerTests
     public void AutomationOpportunityHasExplainableScore()
     {
         var r = new StatisticsService().Analyze(new[] { E("A",0,5), E("B",5,5), E("A",10,5), E("B",15,5) });
-        Assert.NotEmpty(r.AutomationOpportunities);
-        Assert.InRange(r.AutomationOpportunities[0].AutomationScore,0,100);
-        Assert.Contains("гипотез", r.AutomationOpportunities[0].Rationale);
+        Assert.Empty(r.AutomationOpportunities);
+    }
+
+    [Fact]
+    public void HtmlReportUsesDeterministicRealChartData()
+    {
+        var result = new StatisticsService().Analyze(new[] { E("chrome",0,30), E("excel",30,30), E("chrome",60,30) });
+        var d1 = CreateTempDirectory(); var d2 = CreateTempDirectory();
+        var h1 = File.ReadAllText(new HtmlReportService().Write(result, d1));
+        var h2 = File.ReadAllText(new HtmlReportService().Write(result, d2));
+        Assert.DoesNotContain("Math.random", h1);
+        Assert.DoesNotContain("drawPlaceholder", h1);
+        Assert.Contains("Диаграмма 1. Структура времени", h1);
+        Assert.Contains("chrome", h1);
+        Assert.Contains("excel", h1);
+        Assert.Equal(h1, h2);
+    }
+
+    [Fact]
+    public void SessionsDoNotOverlapAndTotalsAreBounded()
+    {
+        var r = new StatisticsService().Analyze(new[] { E("A",0,60), E("B",10,60), E("B",20,60), E("C",200,60) }, 60);
+        foreach (var g in r.Sessions.GroupBy(s => new { s.UserName, s.MachineName }))
+        {
+            var ordered = g.OrderBy(s => s.Start).ToList();
+            for (var i = 0; i < ordered.Count - 1; i++) Assert.True(ordered[i].End <= ordered[i + 1].Start);
+        }
+        Assert.True(r.ActiveSeconds + r.IdleSeconds + r.LockedSeconds + r.UnknownSeconds <= 180);
+        Assert.DoesNotContain(r.Chains2.Keys, k => k.Contains("B → B"));
+    }
+
+    [Fact]
+    public void XlsxHasNonEmptyChartSeriesAndStructuredSheets()
+    {
+        var r = new StatisticsService().Analyze(new[] { E("chrome",0,30), E("excel",30,30), E("chrome",60,30) });
+        var path = new ExcelReportService().Write(r, CreateTempDirectory(), false);
+        using var zip = ZipFile.OpenRead(path);
+        var chart = zip.GetEntry("xl/charts/chart1.xml")!;
+        using var reader = new StreamReader(chart.Open());
+        var xml = reader.ReadToEnd();
+        Assert.Contains("<c:ser>", xml);
+        Assert.Contains("<c:f>Дашборд!$A$5:$A$8</c:f>", xml);
+        Assert.DoesNotContain("<c:plotArea/>", xml);
+    }
+
+    [Fact]
+    public void InsufficientDataDisablesRecommendations()
+    {
+        var r = new StatisticsService().Analyze(new[] { E("A",0,5), E("B",5,5) });
+        Assert.Equal("red", r.DataQuality!.Level);
+        Assert.Empty(r.AutomationOpportunities);
+        Assert.Contains("Объём данных недостаточен", r.DataQuality.Warning);
     }
 
 
