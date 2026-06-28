@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Text.Json;
 using GSPTaskMiningAnalyzer;
 using GSPTaskMiningAnalyzer.Models;
 using Xunit;
@@ -195,7 +196,9 @@ public sealed class AnalyzerTests
             html,
             StringComparison.OrdinalIgnoreCase);
         Assert.Contains("report-data", html);
-        Assert.Contains("Документ Пример", html);
+        using var document = JsonDocument.Parse(ExtractReportDataJson(html));
+        var windowTitles = ExtractWindowTitles(document.RootElement);
+        Assert.Contains("Документ Пример", windowTitles);
         Assert.DoesNotContain("__REPORT_JSON__", html);
         Assert.DoesNotContain("__GENERATED_AT__", html);
         Assert.DoesNotContain("Math.random", html);
@@ -270,6 +273,63 @@ public sealed class AnalyzerTests
         Assert.Contains("Объём данных недостаточен", r.DataQuality.Warning);
     }
 
+
+
+    private static string ExtractReportDataJson(string html)
+    {
+        const string script = "<script";
+        var searchStart = 0;
+        while (true)
+        {
+            var scriptStart = html.IndexOf(script, searchStart, StringComparison.OrdinalIgnoreCase);
+            if (scriptStart < 0) break;
+
+            var tagEnd = html.IndexOf('>', scriptStart);
+            if (tagEnd < 0) break;
+
+            var openingTag = html[scriptStart..tagEnd];
+            if (openingTag.Contains("report-data", StringComparison.OrdinalIgnoreCase))
+            {
+                var contentStart = tagEnd + 1;
+                var contentEnd = html.IndexOf("</script>", contentStart, StringComparison.OrdinalIgnoreCase);
+                Assert.True(contentEnd >= 0, "В HTML не найден закрывающий тег script для report-data.");
+                return html[contentStart..contentEnd].Trim();
+            }
+
+            searchStart = tagEnd + 1;
+        }
+
+        Assert.True(false, "В HTML не найден блок report-data.");
+        return string.Empty;
+    }
+
+    private static List<string> ExtractWindowTitles(JsonElement root)
+    {
+        var titles = new List<string>();
+
+        if (root.TryGetProperty("events", out var events))
+        {
+            AddWindowTitles(events, titles);
+        }
+
+        if (root.TryGetProperty("sessions", out var sessions))
+        {
+            AddWindowTitles(sessions, titles);
+        }
+
+        return titles;
+    }
+
+    private static void AddWindowTitles(JsonElement items, List<string> titles)
+    {
+        foreach (var item in items.EnumerateArray())
+        {
+            if (item.TryGetProperty("windowTitle", out var title))
+            {
+                titles.Add(title.GetString() ?? string.Empty);
+            }
+        }
+    }
 
     private const string CsvHeader = "timestampUtc,machineName,userName,eventType,processName,processId,windowTitle,durationSeconds,screenshotFile\n";
 
