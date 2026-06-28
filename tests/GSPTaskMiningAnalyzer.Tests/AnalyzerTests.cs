@@ -11,14 +11,55 @@ public sealed class AnalyzerTests
     public void DurationLimitsLargeGaps()
     {
         var d = new DurationCalculator { MaxGapSeconds = 60 }.Calculate(new[] { E("A", 0, null), E("A", 120, null) });
-        Assert.Equal(60, d[0].Seconds);
+        Assert.Equal(60, d[0].DurationSeconds);
     }
 
     [Fact]
     public void UsesDurationSeconds()
     {
         var d = new DurationCalculator().Calculate(new[] { E("A", 0, 12d) });
-        Assert.Equal(12, d[0].Seconds);
+        Assert.Equal(12, d[0].DurationSeconds);
+    }
+
+
+    [Fact]
+    public void DurationCalculatorReturnsOriginalEventAndCalculatedDuration()
+    {
+        var sourceEvent = E("A", 0, 12d);
+
+        var calculated = new DurationCalculator().Calculate(new[] { sourceEvent });
+
+        var item = Assert.Single(calculated);
+        Assert.Same(sourceEvent, item.Event);
+        Assert.Equal(12, item.DurationSeconds);
+    }
+
+    [Fact]
+    public void DurationCalculatorLimitsDurationByNextEvent()
+    {
+        var calculated = new DurationCalculator { MaxGapSeconds = 60 }.Calculate(new[] { E("A", 0, 60d), E("B", 10, 60d) });
+
+        Assert.Equal(10, calculated[0].DurationSeconds);
+    }
+
+    [Fact]
+    public void DurationCalculatorDoesNotCreateNegativeDuration()
+    {
+        var calculated = new DurationCalculator { MaxGapSeconds = 60 }.Calculate(new[] { E("A", 10, 60d), E("B", 0, 60d) });
+
+        Assert.All(calculated, item => Assert.True(item.DurationSeconds >= 0));
+    }
+
+    [Fact]
+    public void DurationCalculatorKeepsUserSessionsSeparate()
+    {
+        var firstUserEvent = E("A", 0, null);
+        var secondUserEvent = E("B", 10, null) with { UserName = "u2" };
+
+        var calculated = new DurationCalculator { MaxGapSeconds = 60 }.Calculate(new[] { firstUserEvent, secondUserEvent });
+
+        Assert.Equal(60, calculated.Single(item => item.Event.UserName == "u").DurationSeconds);
+        Assert.Equal(60, calculated.Single(item => item.Event.UserName == "u2").DurationSeconds);
     }
 
     [Fact]
@@ -149,11 +190,16 @@ public sealed class AnalyzerTests
         var html = File.ReadAllText(htmlPath);
 
         Assert.True(File.Exists(htmlPath));
-        Assert.Contains("<!DOCTYPE html>", html);
+        Assert.Contains(
+            "<!doctype html>",
+            html,
+            StringComparison.OrdinalIgnoreCase);
         Assert.Contains("report-data", html);
         Assert.Contains("Документ Пример", html);
         Assert.DoesNotContain("__REPORT_JSON__", html);
         Assert.DoesNotContain("__GENERATED_AT__", html);
+        Assert.DoesNotContain("Math.random", html);
+        Assert.DoesNotContain("drawPlaceholder", html);
     }
 
 
