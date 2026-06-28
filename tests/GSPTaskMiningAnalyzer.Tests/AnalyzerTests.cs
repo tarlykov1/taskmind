@@ -190,11 +190,16 @@ public sealed class AnalyzerTests
         var html = File.ReadAllText(htmlPath);
 
         Assert.True(File.Exists(htmlPath));
-        Assert.Contains("<!DOCTYPE html>", html);
+        Assert.Contains(
+            "<!doctype html>",
+            html,
+            StringComparison.OrdinalIgnoreCase);
         Assert.Contains("report-data", html);
         Assert.Contains("Документ Пример", html);
         Assert.DoesNotContain("__REPORT_JSON__", html);
         Assert.DoesNotContain("__GENERATED_AT__", html);
+        Assert.DoesNotContain("Math.random", html);
+        Assert.DoesNotContain("drawPlaceholder", html);
     }
 
 

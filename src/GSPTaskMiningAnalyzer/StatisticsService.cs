@@ -14,12 +14,11 @@ using GSPTaskMiningAnalyzer.Models; namespace GSPTaskMiningAnalyzer; public seal
             if (end < start) end = start;
             var state = State(e);
             var shot = string.IsNullOrEmpty(e.ScreenshotFile) ? 0 : 1;
-            var same = cur is not null
-                && cur.ProcessName.Equals(e.ProcessName, StringComparison.Ordinal)
-                && cur.WindowTitle.Equals(e.WindowTitle, StringComparison.Ordinal)
-                && cur.State.Equals(state, StringComparison.Ordinal)
-                && start <= cur.End;
-            if (!same)
+            if (cur is null
+                || !cur.ProcessName.Equals(e.ProcessName, StringComparison.Ordinal)
+                || !cur.WindowTitle.Equals(e.WindowTitle, StringComparison.Ordinal)
+                || !cur.State.Equals(state, StringComparison.Ordinal)
+                || start > cur.End)
             {
                 if (cur is not null) r.Sessions.Add(cur);
                 cur = new(start, end, Math.Max(0, (end - start).TotalSeconds), e.ProcessName, e.WindowTitle, e.MachineName, e.UserName, shot, state);
