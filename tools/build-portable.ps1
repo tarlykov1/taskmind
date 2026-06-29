@@ -9,8 +9,31 @@ $publish = Join-Path $root 'artifacts/publish'
 $portable = Join-Path $root 'artifacts/GSPTaskMiningAgentPortable'
 $dist = Join-Path $root 'dist'
 
-& (Join-Path $root 'tools/restore-icons.ps1') -RepositoryRoot $root
-if ($LASTEXITCODE -ne 0) { throw "restore-icons failed with exit code $LASTEXITCODE" }
+$restoreIconsScript = Join-Path $root 'tools/restore-icons.ps1'
+try {
+    & $restoreIconsScript -RepositoryRoot $root
+}
+catch {
+    throw "restore-icons failed: $($_.Exception.Message)"
+}
+
+$iconDirectory = Join-Path $root 'src/GSPTaskMiningAgent/Assets'
+$requiredIcons = @(
+    'GSPTaskMining.ico',
+    'GSPTaskMiningGreen.ico',
+    'GSPTaskMiningYellow.ico',
+    'GSPTaskMiningRed.ico',
+    'GSPTaskMiningGray.ico'
+)
+foreach ($iconName in $requiredIcons) {
+    $iconPath = Join-Path $iconDirectory $iconName
+    if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
+        throw "Required icon was not restored: $iconPath"
+    }
+    if ((Get-Item -LiteralPath $iconPath).Length -le 0) {
+        throw "Restored icon is empty: $iconPath"
+    }
+}
 
 Remove-Item (Join-Path $root 'artifacts') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $dist -Recurse -Force -ErrorAction SilentlyContinue
