@@ -58,6 +58,30 @@ if ($LASTEXITCODE -ne 0) { throw "Self-test failed with exit code $LASTEXITCODE"
 & $analyzerExe --self-test --debug
 if ($LASTEXITCODE -ne 0) { throw "Analyzer self-test failed with exit code $LASTEXITCODE" }
 
+$testData = Join-Path $root 'artifacts/analyzer-test-data'
+$testOutput = Join-Path $root 'artifacts/analyzer-test-output'
+New-Item -ItemType Directory -Path $testData,$testOutput -Force | Out-Null
+'{"eventType":"active_window_tick","timestampUtc":"2026-01-01T00:00:00Z","timestampLocal":"2026-01-01T00:00:00+00:00","machineName":"m","userName":"u","processName":"Excel","windowTitle":"Book1","isIdle":false,"durationSeconds":5}' | Set-Content (Join-Path $testData 'events.jsonl') -Encoding utf8NoBOM
+& $analyzerExe `
+  --input $testData `
+  --output $testOutput `
+  --html-only `
+  --debug
+if ($LASTEXITCODE -ne 0) { throw "Analyzer html-only failed with exit code $LASTEXITCODE" }
+$html = Get-ChildItem $testOutput -Filter *.html
+if (-not $html) { throw "Analyzer did not create HTML report" }
+if ($html.Length -eq 0) { throw "Created HTML report is empty" }
+Remove-Item (Join-Path $testOutput '*') -Force
+& $analyzerExe `
+  --input $testData `
+  --output $testOutput `
+  --xlsx-only `
+  --debug
+if ($LASTEXITCODE -ne 0) { throw "Analyzer xlsx-only failed with exit code $LASTEXITCODE" }
+$xlsx = Get-ChildItem $testOutput -Filter *.xlsx
+if (-not $xlsx) { throw "Analyzer did not create XLSX report" }
+if ($xlsx.Length -eq 0) { throw "Created XLSX report is empty" }
+
 New-Item -ItemType Directory -Path $portable,$dist | Out-Null
 Copy-Item $exe $portable
 Copy-Item $analyzerExe $portable

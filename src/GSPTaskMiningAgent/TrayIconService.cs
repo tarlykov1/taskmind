@@ -11,7 +11,7 @@ public sealed class TrayIconService : IDisposable
     public TrayIconService(AgentPaths paths)
     {
         _paths = paths;
-        _notifyIcon = new NotifyIcon { Icon = SystemIcons.Application, Text = BuildTooltip("зелёный – сбор работает"), Visible = true, ContextMenuStrip = BuildMenu() };
+        _notifyIcon = new NotifyIcon { Icon = TrayIconResources.Load(TrayIconState.Green), Text = BuildTooltip("зелёный – сбор работает"), Visible = true, ContextMenuStrip = BuildMenu() };
     }
     public ContextMenuStrip BuildMenu()
     {
@@ -31,7 +31,7 @@ public sealed class TrayIconService : IDisposable
         return menu;
     }
     public string BuildTooltip(string state) => $"GSP Task Mining Agent\n{state}\nВремя последнего события: {DateTimeOffset.Now:dd.MM.yyyy HH:mm:ss}\nСобытий сегодня: {CountToday()}\nКоличество ошибок: {CountErrors()}";
-    public void SetState(string state) { _notifyIcon.Text = BuildTooltip(state)[..Math.Min(63, BuildTooltip(state).Length)]; _notifyIcon.Icon = state.Contains("ошибка",StringComparison.OrdinalIgnoreCase) ? SystemIcons.Error : state.Contains("выключ",StringComparison.OrdinalIgnoreCase) ? SystemIcons.Shield : state.Contains("приост",StringComparison.OrdinalIgnoreCase) ? SystemIcons.Warning : SystemIcons.Application; }
+    public void SetState(string state) { _notifyIcon.Text = BuildTooltip(state)[..Math.Min(63, BuildTooltip(state).Length)]; _notifyIcon.Icon = state.Contains("ошибка",StringComparison.OrdinalIgnoreCase) ? TrayIconResources.Load(TrayIconState.Red) : state.Contains("выключ",StringComparison.OrdinalIgnoreCase) ? TrayIconResources.Load(TrayIconState.Gray) : state.Contains("приост",StringComparison.OrdinalIgnoreCase) ? TrayIconResources.Load(TrayIconState.Yellow) : TrayIconResources.Load(TrayIconState.Green); }
     public void GracefulShutdown() => File.WriteAllText(_paths.StopFile, DateTimeOffset.UtcNow.ToString("O"));
     private int CountToday()=>Directory.Exists(_paths.Logs)?Directory.EnumerateFiles(_paths.Logs,$"events-{DateTimeOffset.UtcNow:yyyyMMdd}.jsonl").Select(f=>File.ReadLines(f).Count()).FirstOrDefault():0;
     private int CountErrors()=>Directory.Exists(_paths.Errors)?Directory.EnumerateFiles(_paths.Errors).Count():0;
