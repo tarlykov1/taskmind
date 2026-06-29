@@ -205,6 +205,114 @@ public sealed class AnalyzerTests
         Assert.DoesNotContain("drawPlaceholder", html);
     }
 
+    [Fact]
+    public void CreatesHtmlForUtcZEventsWithTimelineIntervals()
+    {
+        var inputDirectory = CreateTempDirectory();
+        File.WriteAllText(
+            Path.Combine(inputDirectory, "events-20260627.jsonl"),
+            string.Join(Environment.NewLine,
+                JsonEvent("2026-06-27T10:00:00Z", "chrome", "CRM"),
+                JsonEvent("2026-06-27T10:01:00Z", "excel", "Report")));
+
+        var (events, errors) = new LogReader().Read(inputDirectory);
+        var path = new HtmlReportService().Write(new StatisticsService().Analyze(events), CreateTempDirectory());
+        var html = File.ReadAllText(path);
+
+        Assert.Empty(errors);
+        Assert.True(File.Exists(path));
+        Assert.True(new FileInfo(path).Length > 0);
+        Assert.True(CountIntervals(html) > 0);
+    }
+
+    [Fact]
+    public void CreatesHtmlForTimestampLocalWithPlusThreeOffset()
+    {
+        var inputDirectory = CreateTempDirectory();
+        File.WriteAllText(
+            Path.Combine(inputDirectory, "events-20260627.jsonl"),
+            JsonEventWithLocal("2026-06-27T07:00:00Z", "2026-06-27T10:00:00+03:00", "chrome", "CRM") + Environment.NewLine);
+
+        var (events, errors) = new LogReader().Read(inputDirectory);
+        var path = new HtmlReportService().Write(new StatisticsService().Analyze(events), CreateTempDirectory());
+
+        Assert.Empty(errors);
+        Assert.True(File.Exists(path));
+        Assert.True(new FileInfo(path).Length > 0);
+    }
+
+    [Fact]
+    public void CreatesHtmlForMixedUtcAndPlusThreeSessionOffsets()
+    {
+        var result = new AnalysisResult { ActiveSeconds = 120 };
+        result.Sessions.Add(CreateSession("2026-06-27T10:00:00+03:00", "2026-06-27T10:01:00+03:00", "chrome"));
+        result.Sessions.Add(CreateSession("2026-06-27T07:01:00+00:00", "2026-06-27T07:02:00+00:00", "excel"));
+
+        var exception = Record.Exception(() => new HtmlReportService().Write(result, CreateTempDirectory()));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void CreatesHtmlWhenRunnerLocalTimeZoneIsUtcPlusThree()
+    {
+        var previousTimeZone = Environment.GetEnvironmentVariable("TZ");
+
+        try
+        {
+            Environment.SetEnvironmentVariable("TZ", "Europe/Moscow");
+            TimeZoneInfo.ClearCachedData();
+            var result = new AnalysisResult { ActiveSeconds = 60 };
+            result.Sessions.Add(CreateSession("2026-06-27T07:00:00+00:00", "2026-06-27T07:01:00+00:00", "chrome"));
+
+            var path = new HtmlReportService().Write(result, CreateTempDirectory());
+
+            Assert.Equal(TimeSpan.FromHours(3), TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow));
+            Assert.True(new FileInfo(path).Length > 0);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("TZ", previousTimeZone);
+            TimeZoneInfo.ClearCachedData();
+        }
+    }
+
+    [Fact]
+    public void CreatesHtmlForSevenHundredFiveEventsAndManySessions()
+    {
+        var events = Enumerable.Range(0, 705).Select(i => E(i % 2 == 0 ? "chrome" : "excel", i * 2, 1));
+
+        var path = new HtmlReportService().Write(new StatisticsService().Analyze(events, maxGap: 1), CreateTempDirectory());
+
+        Assert.True(File.Exists(path));
+        Assert.True(new FileInfo(path).Length > 0);
+    }
+
+    [Fact]
+    public void BuildIntervalsDoesNotThrowArgumentExceptionForUnrelatedFirstSessionOffset()
+    {
+        var result = new AnalysisResult { ActiveSeconds = 120 };
+        result.Sessions.Add(CreateSession("2026-06-27T11:00:00+03:00", "2026-06-27T11:01:00+03:00", "later"));
+        result.Sessions.Add(CreateSession("2026-06-27T07:00:00+00:00", "2026-06-27T07:01:00+00:00", "earlier"));
+
+        var exception = Record.Exception(() => new HtmlReportService().Write(result, CreateTempDirectory()));
+
+        Assert.Null(exception);
+    }
+
+    [Fact]
+    public void EmptySessionsCreateHtmlWithInsufficientDataWarning()
+    {
+        var result = new AnalysisResult { ActiveSeconds = 5 };
+        result.Events.Add(E("chrome", 0, 5));
+
+        var path = new HtmlReportService().Write(result, CreateTempDirectory());
+
+        Assert.True(File.Exists(path));
+        Assert.True(new FileInfo(path).Length > 0);
+        Assert.Contains("Недостаточно данных", File.ReadAllText(path));
+    }
+
 
     [Fact]
     public void LockAppIsLockedAndChromeTicksAreOneSession()
@@ -429,6 +537,12 @@ public sealed class AnalyzerTests
         return titles;
     }
 
+    private static int CountIntervals(string html)
+    {
+        using var document = JsonDocument.Parse(ExtractReportDataJson(html));
+        return document.RootElement.GetProperty("intervals").GetArrayLength();
+    }
+
     private static void AddWindowTitles(JsonElement items, List<string> titles)
     {
         foreach (var item in items.EnumerateArray())
@@ -451,6 +565,12 @@ public sealed class AnalyzerTests
 
     private static string JsonEvent(string timestampUtc, string processName, string windowTitle) =>
         $"{{\"timestampUtc\":\"{timestampUtc}\",\"machineName\":\"m\",\"userName\":\"u\",\"eventType\":\"active_window_tick\",\"processName\":\"{processName}\",\"processId\":42,\"windowTitle\":\"{windowTitle}\",\"durationSeconds\":30,\"screenshotFile\":\"shot.png\",\"isIdle\":false}}";
+
+    private static string JsonEventWithLocal(string timestampUtc, string timestampLocal, string processName, string windowTitle) =>
+        $"{{\"timestampUtc\":\"{timestampUtc}\",\"timestampLocal\":\"{timestampLocal}\",\"machineName\":\"m\",\"userName\":\"u\",\"eventType\":\"active_window_tick\",\"processName\":\"{processName}\",\"processId\":42,\"windowTitle\":\"{windowTitle}\",\"durationSeconds\":30,\"screenshotFile\":\"shot.png\",\"isIdle\":false}}";
+
+    private static Session CreateSession(string start, string end, string processName) =>
+        new(DateTimeOffset.Parse(start), DateTimeOffset.Parse(end), (DateTimeOffset.Parse(end) - DateTimeOffset.Parse(start)).TotalSeconds, processName, processName, "m", "u", 0);
 
     private static void CreateZipWithJsonl(string path, string json)
     {
