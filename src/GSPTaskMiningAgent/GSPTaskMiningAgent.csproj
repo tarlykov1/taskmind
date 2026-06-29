@@ -14,5 +14,16 @@
     <RootNamespace>GSPTaskMiningAgent</RootNamespace>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets\GSPTaskMining.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\GSPTaskMining.ico" />
+    <EmbeddedResource Include="Assets\GSPTaskMiningGreen.ico" />
+    <EmbeddedResource Include="Assets\GSPTaskMiningYellow.ico" />
+    <EmbeddedResource Include="Assets\GSPTaskMiningRed.ico" />
+    <EmbeddedResource Include="Assets\GSPTaskMiningGray.ico" />
+  </ItemGroup>
+  <Target Name="GenerateBrandedIcons" BeforeTargets="BeforeBuild">
+    <Exec Command="pwsh -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\tools\generate-icons.ps1&quot; -OutputDirectory &quot;$(MSBuildProjectDirectory)\Assets&quot; -ThemePath &quot;$(MSBuildProjectDirectory)\Assets\icon-theme.json&quot;" />
+  </Target>
 </Project>

@@ -5,3 +5,5 @@ TestResults/
 *.user
 config.json
 data/
+# Generated branded icon binaries
+src/GSPTaskMiningAgent/Assets/*.ico
