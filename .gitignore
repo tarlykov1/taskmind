@@ -5,5 +5,5 @@ TestResults/
 *.user
 config.json
 data/
-# Generated branded icon binaries
+# Restored from text assets by tools/restore-icons.ps1
 src/GSPTaskMiningAgent/Assets/*.ico

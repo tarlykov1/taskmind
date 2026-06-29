@@ -9,6 +9,9 @@ $publish = Join-Path $root 'artifacts/publish'
 $portable = Join-Path $root 'artifacts/GSPTaskMiningAgentPortable'
 $dist = Join-Path $root 'dist'
 
+& (Join-Path $root 'tools/restore-icons.ps1') -RepositoryRoot $root
+if ($LASTEXITCODE -ne 0) { throw "restore-icons failed with exit code $LASTEXITCODE" }
+
 Remove-Item (Join-Path $root 'artifacts') -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item $dist -Recurse -Force -ErrorAction SilentlyContinue
 

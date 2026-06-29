@@ -115,7 +115,7 @@ internal static class Program
             var timer = new System.Windows.Forms.Timer { Interval = 5000 };
             timer.Tick += (_, _) => System.Windows.Forms.Application.ExitThread();
             timer.Start();
-            using var icon = new System.Windows.Forms.NotifyIcon { Icon = TrayIconResources.LoadMain(), Visible = true, Text = "GSP tray self-test" };
+            using var icon = new System.Windows.Forms.NotifyIcon { Icon = TrayIconResources.Load(TrayIconState.Green), Visible = true, Text = "GSP tray self-test" };
             System.Windows.Forms.Application.Run();
         }
         return 0;
