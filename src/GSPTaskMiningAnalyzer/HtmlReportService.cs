@@ -71,15 +71,66 @@ public sealed class HtmlReportService
     private static object[] BuildIntervals(IReadOnlyCollection<Session>? sessions, TimeSpan step)
     {
         if (sessions is null || sessions.Count == 0) return [];
-        var start = new DateTimeOffset(sessions.Min(s => s.Start).LocalDateTime.Date, sessions.First().Start.Offset);
+
+        var firstSessionStart = sessions.Min(s => s.Start).ToLocalTime();
+        var start = new DateTimeOffset(
+            firstSessionStart.Year,
+            firstSessionStart.Month,
+            firstSessionStart.Day,
+            0,
+            0,
+            0,
+            firstSessionStart.Offset);
         var end = sessions.Max(s => s.End).ToLocalTime();
         var rows = new List<object>();
-        for (var t = start; t < end; t = t.Add(step))
+
+        for (var intervalStart = start; intervalStart < end; intervalStart = intervalStart.Add(step))
         {
-            var n = t.Add(step); double a=0,i=0,l=0,u=0; int sw=0;
-            foreach (var s in sessions) { var ov = Math.Max(0, (Min(s.End.ToLocalTime(), n) - Max(s.Start.ToLocalTime(), t)).TotalSeconds); if (ov<=0) continue; if(s.State=="idle") i+=ov; else if(s.State=="locked") l+=ov; else if(s.State=="unknown") u+=ov; else a+=ov; if(s.Start.ToLocalTime()>=t && s.Start.ToLocalTime()<n) sw++; }
-            rows.Add(new { label = t.ToString("dd.MM HH:mm"), start = t, end = n, active = a, idle = i, locked = l, unknown = u, switches = Math.Max(0, sw-1) });
+            var intervalEnd = intervalStart.Add(step);
+            double active = 0;
+            double idle = 0;
+            double locked = 0;
+            double unknown = 0;
+            var switches = 0;
+
+            foreach (var session in sessions)
+            {
+                var sessionStart = session.Start.ToLocalTime();
+                var sessionEnd = session.End.ToLocalTime();
+                var overlapStart = sessionStart > intervalStart ? sessionStart : intervalStart;
+                var overlapEnd = sessionEnd < intervalEnd ? sessionEnd : intervalEnd;
+                var overlapSeconds = Math.Max(0, (overlapEnd - overlapStart).TotalSeconds);
+
+                if (overlapSeconds <= 0)
+                {
+                    continue;
+                }
+
+                switch (session.State)
+                {
+                    case "idle":
+                        idle += overlapSeconds;
+                        break;
+                    case "locked":
+                        locked += overlapSeconds;
+                        break;
+                    case "unknown":
+                        unknown += overlapSeconds;
+                        break;
+                    default:
+                        active += overlapSeconds;
+                        break;
+                }
+
+                if (sessionStart >= intervalStart && sessionStart < intervalEnd)
+                {
+                    switches++;
+                }
+            }
+
+            rows.Add(new { label = intervalStart.ToString("dd.MM HH:mm"), start = intervalStart, end = intervalEnd, active, idle, locked, unknown, switches = Math.Max(0, switches - 1) });
         }
+
         return rows.ToArray();
     }
     private static DateTimeOffset Min(DateTimeOffset a, DateTimeOffset b) => a < b ? a : b;
