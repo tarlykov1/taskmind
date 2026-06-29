@@ -8,10 +8,13 @@ public sealed class TrayIconService : IDisposable
 {
     private readonly AgentPaths _paths;
     private readonly NotifyIcon _notifyIcon;
+    private Icon _currentIcon;
     public TrayIconService(AgentPaths paths)
     {
         _paths = paths;
-        _notifyIcon = new NotifyIcon { Icon = SystemIcons.Application, Text = BuildTooltip("зелёный – сбор работает"), Visible = true, ContextMenuStrip = BuildMenu() };
+        TrayIconResources.ConfigureErrorDirectory(paths.Errors);
+        _currentIcon = TrayIconResources.Load(TrayIconState.Green);
+        _notifyIcon = new NotifyIcon { Icon = _currentIcon, Text = BuildTooltip("зелёный – сбор работает"), Visible = true, ContextMenuStrip = BuildMenu() };
     }
     public ContextMenuStrip BuildMenu()
     {
@@ -31,10 +34,11 @@ public sealed class TrayIconService : IDisposable
         return menu;
     }
     public string BuildTooltip(string state) => $"GSP Task Mining Agent\n{state}\nВремя последнего события: {DateTimeOffset.Now:dd.MM.yyyy HH:mm:ss}\nСобытий сегодня: {CountToday()}\nКоличество ошибок: {CountErrors()}";
-    public void SetState(string state) { _notifyIcon.Text = BuildTooltip(state)[..Math.Min(63, BuildTooltip(state).Length)]; _notifyIcon.Icon = state.Contains("ошибка",StringComparison.OrdinalIgnoreCase) ? SystemIcons.Error : state.Contains("выключ",StringComparison.OrdinalIgnoreCase) ? SystemIcons.Shield : state.Contains("приост",StringComparison.OrdinalIgnoreCase) ? SystemIcons.Warning : SystemIcons.Application; }
+    public void SetState(string state) { _notifyIcon.Text = BuildTooltip(state)[..Math.Min(63, BuildTooltip(state).Length)]; var nextState = state.Contains("ошибка",StringComparison.OrdinalIgnoreCase) ? TrayIconState.Red : state.Contains("выключ",StringComparison.OrdinalIgnoreCase) ? TrayIconState.Gray : state.Contains("приост",StringComparison.OrdinalIgnoreCase) ? TrayIconState.Yellow : TrayIconState.Green; ReplaceIcon(nextState); }
+    private void ReplaceIcon(TrayIconState state) { var previous = _currentIcon; _currentIcon = TrayIconResources.Load(state); _notifyIcon.Icon = _currentIcon; previous.Dispose(); }
     public void GracefulShutdown() => File.WriteAllText(_paths.StopFile, DateTimeOffset.UtcNow.ToString("O"));
     private int CountToday()=>Directory.Exists(_paths.Logs)?Directory.EnumerateFiles(_paths.Logs,$"events-{DateTimeOffset.UtcNow:yyyyMMdd}.jsonl").Select(f=>File.ReadLines(f).Count()).FirstOrDefault():0;
     private int CountErrors()=>Directory.Exists(_paths.Errors)?Directory.EnumerateFiles(_paths.Errors).Count():0;
     private static void Open(string path){try{Process.Start(new ProcessStartInfo(path){UseShellExecute=true});}catch{}}
-    public void Dispose(){_notifyIcon.Visible=false;_notifyIcon.Dispose();}
+    public void Dispose(){_notifyIcon.Visible=false;_notifyIcon.Dispose();_currentIcon.Dispose();}
 }

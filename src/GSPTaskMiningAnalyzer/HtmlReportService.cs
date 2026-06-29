@@ -17,29 +17,61 @@ public sealed class HtmlReportService
         var data = BuildView(result);
         var json = JsonSerializer.Serialize(data, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Encoder = JavaScriptEncoder.Create(UnicodeRanges.BasicLatin, UnicodeRanges.Cyrillic) });
         var html = Template.Replace("__REPORT_JSON__", json).Replace("__GENERATED_AT__", "детерминированный отчёт");
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            throw new InvalidOperationException("HtmlReportService returned empty HTML.");
+        }
         var path = Path.Combine(outputDirectory, $"task_mining_dashboard_{DateTime.Now:yyyyMMdd_HHmmss}.html");
         File.WriteAllText(path, html, new UTF8Encoding(false));
+        if (!File.Exists(path) || new FileInfo(path).Length == 0)
+        {
+            throw new IOException("HTML report file was not created or is empty: " + path);
+        }
         return path;
     }
 
     private static object BuildView(AnalysisResult r)
     {
+        var events = r.Events ?? [];
+        var sessions = r.Sessions ?? [];
+        var chains2 = r.Chains2 ?? [];
+        var errors = r.Errors ?? [];
+        var quality = r.DataQuality ?? new DataQualityService().Evaluate(r);
         var total = r.ActiveSeconds + r.IdleSeconds + r.LockedSeconds + r.UnknownSeconds;
-        var intervals = BuildIntervals(r.Sessions, TimeSpan.FromMinutes(15));
-        var apps = r.Sessions.Where(IsBusinessApp).GroupBy(s => s.ProcessName, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new { name = g.Key, seconds = g.Sum(x => x.DurationSeconds), share = total > 0 ? g.Sum(x => x.DurationSeconds) / total : 0, sessions = g.Count(), average = g.Average(x => x.DurationSeconds), max = g.Max(x => x.DurationSeconds), windows = g.Select(x => x.WindowTitle).Distinct().Count() })
+        var intervals = BuildIntervals(sessions, TimeSpan.FromMinutes(15));
+        var apps = sessions.Where(IsBusinessApp)
+            .GroupBy(s => Safe(s.ProcessName, "unknown"), StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var items = g.ToArray();
+                var seconds = items.Sum(x => x.DurationSeconds);
+                return new
+                {
+                    name = g.Key,
+                    seconds,
+                    share = total > 0 ? seconds / total : 0,
+                    sessions = items.Length,
+                    average = items.Length == 0 ? 0 : items.Average(x => x.DurationSeconds),
+                    max = items.Length == 0 ? 0 : items.Max(x => x.DurationSeconds),
+                    windows = items.Select(x => Safe(x.WindowTitle)).Distinct(StringComparer.OrdinalIgnoreCase).Count()
+                };
+            })
             .OrderByDescending(x => x.seconds).Take(10).ToArray();
-        var transitions = r.Chains2.Where(x => x.Value >= 2 && GoodChain(x.Key)).OrderByDescending(x => x.Value).Take(10).Select(x => new { chain = x.Key, count = x.Value }).ToArray();
-        var sessions = r.Sessions.Select(s => new { s.WindowTitle }).ToArray();
-        return new { r.From, r.To, machine = string.Join(", ", r.Events.Select(e => e.MachineName).Where(x => x.Length > 0).Distinct()), user = string.Join(", ", r.Events.Select(e => e.UserName).Where(x => x.Length > 0).Distinct()), r.RowsRead, r.UniqueEvents, r.ActiveSeconds, r.IdleSeconds, r.LockedSeconds, r.UnknownSeconds, sessionCount = r.Sessions.Count, switches = r.Chains2.Values.Sum(), errors = r.Errors.Count + r.BadRows, quality = r.DataQuality, structure = new[] { new { label = "Активность", seconds = r.ActiveSeconds }, new { label = "Простой", seconds = r.IdleSeconds }, new { label = "Блокировка", seconds = r.LockedSeconds }, new { label = "Неизвестно", seconds = r.UnknownSeconds } }, intervals, apps, transitions, sessions };
+        var transitions = chains2.Where(x => x.Value >= 2 && GoodChain(x.Key ?? string.Empty)).OrderByDescending(x => x.Value).Take(10).Select(x => new { chain = x.Key, count = x.Value }).ToArray();
+        var sessionRows = sessions.Select(s => new { windowTitle = Safe(s.WindowTitle), processName = Safe(s.ProcessName, "unknown"), machineName = Safe(s.MachineName), userName = Safe(s.UserName) }).ToArray();
+        var eventRows = events.Select(e => new { windowTitle = Safe(e.WindowTitle), processName = Safe(e.ProcessName, "unknown"), machineName = Safe(e.MachineName), userName = Safe(e.UserName) }).ToArray();
+        var insufficient = events.Count == 0 || sessions.Count == 0 || total <= 0;
+        var warning = string.IsNullOrWhiteSpace(quality.Warning) ? (insufficient ? "Недостаточно данных" : string.Empty) : quality.Warning;
+        return new { r.From, r.To, machine = string.Join(", ", events.Select(e => Safe(e.MachineName)).Where(x => x.Length > 0).Distinct()), user = string.Join(", ", events.Select(e => Safe(e.UserName)).Where(x => x.Length > 0).Distinct()), r.RowsRead, r.UniqueEvents, r.ActiveSeconds, r.IdleSeconds, r.LockedSeconds, r.UnknownSeconds, sessionCount = sessions.Count, switches = chains2.Values.Sum(), errors = errors.Count + r.BadRows, quality = quality with { Warning = warning }, structure = new[] { new { label = "Активность", seconds = r.ActiveSeconds }, new { label = "Простой", seconds = r.IdleSeconds }, new { label = "Блокировка", seconds = r.LockedSeconds }, new { label = "Неизвестно", seconds = r.UnknownSeconds } }, intervals, apps, transitions, sessions = sessionRows, events = eventRows };
     }
 
-    private static bool IsBusinessApp(Session s) => s.State == "active" && !new[] { "GSPTaskMiningAgent", "GSPTaskMiningAnalyzer", "Taskmgr", "LockApp", "unknown", "" }.Contains(s.ProcessName, StringComparer.OrdinalIgnoreCase);
+    private static bool IsBusinessApp(Session s) => s.State == "active" && !new[] { "GSPTaskMiningAgent", "GSPTaskMiningAnalyzer", "Taskmgr", "LockApp", "unknown", "" }.Contains(Safe(s.ProcessName), StringComparer.OrdinalIgnoreCase);
+    private static string Safe(string? value, string fallback = "") => string.IsNullOrWhiteSpace(value) ? fallback : value;
     private static bool GoodChain(string c) { var parts = c.Split('→', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries); return parts.Length > 1 && parts.Zip(parts.Skip(1)).All(p => !p.First.Equals(p.Second, StringComparison.OrdinalIgnoreCase)) && !parts.Any(p => new[] { "GSPTaskMiningAgent", "GSPTaskMiningAnalyzer", "Taskmgr", "LockApp", "unknown" }.Contains(p, StringComparer.OrdinalIgnoreCase)); }
-    private static object[] BuildIntervals(List<Session> sessions, TimeSpan step)
+    private static object[] BuildIntervals(IReadOnlyCollection<Session>? sessions, TimeSpan step)
     {
-        if (sessions.Count == 0) return [];
-        var start = new DateTimeOffset(sessions.Min(s => s.Start).LocalDateTime.Date, sessions[0].Start.Offset);
+        if (sessions is null || sessions.Count == 0) return [];
+        var start = new DateTimeOffset(sessions.Min(s => s.Start).LocalDateTime.Date, sessions.First().Start.Offset);
         var end = sessions.Max(s => s.End).ToLocalTime();
         var rows = new List<object>();
         for (var t = start; t < end; t = t.Add(step))

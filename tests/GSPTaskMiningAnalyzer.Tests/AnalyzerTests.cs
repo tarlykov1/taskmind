@@ -237,6 +237,115 @@ public sealed class AnalyzerTests
         Assert.Equal(h1, h2);
     }
 
+
+    [Fact]
+    public void CreatesHtmlForEmptyResult()
+    {
+        var path = new HtmlReportService().Write(new AnalysisResult(), CreateTempDirectory());
+        Assert.True(new FileInfo(path).Length > 0);
+        Assert.Contains("Недостаточно данных", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void CreatesHtmlForSingleEvent()
+    {
+        var path = new HtmlReportService().Write(new StatisticsService().Analyze(new[] { E("chrome", 0, 5) }), CreateTempDirectory());
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
+    public void CreatesHtmlWithoutSessions()
+    {
+        var result = new AnalysisResult { ActiveSeconds = 5 };
+        result.Events.Add(E("chrome", 0, 5));
+        var path = new HtmlReportService().Write(result, CreateTempDirectory());
+        Assert.Contains("Недостаточно данных", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void CreatesHtmlWithoutTransitions()
+    {
+        var result = new StatisticsService().Analyze(new[] { E("chrome", 0, 5) });
+        result.Chains2.Clear();
+        var path = new HtmlReportService().Write(result, CreateTempDirectory());
+        Assert.True(new FileInfo(path).Length > 0);
+    }
+
+    [Fact]
+    public void CreatesHtmlForSmallDataset()
+    {
+        var path = new HtmlReportService().Write(new StatisticsService().Analyze(new[] { E("chrome", 0, 5), E("excel", 5, 5) }), CreateTempDirectory());
+        Assert.Contains("chrome", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void CreatesHtmlForLargeDataset()
+    {
+        var events = Enumerable.Range(0, 100_000).Select(i => E(i % 2 == 0 ? "chrome" : "excel", i, 1));
+        var path = new HtmlReportService().Write(new StatisticsService().Analyze(events), CreateTempDirectory());
+        Assert.True(new FileInfo(path).Length > 0);
+    }
+
+    [Fact]
+    public void HtmlFileExistsAndIsNotEmpty()
+    {
+        var path = new HtmlReportService().Write(new StatisticsService().Analyze(new[] { E("chrome", 0, 5) }), CreateTempDirectory());
+        Assert.True(File.Exists(path));
+        Assert.True(new FileInfo(path).Length > 0);
+    }
+
+    [Fact]
+    public void HtmlContainsReportData()
+    {
+        var path = new HtmlReportService().Write(new StatisticsService().Analyze(new[] { E("chrome", 0, 5) }), CreateTempDirectory());
+        Assert.Contains("report-data", File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void HtmlContainsInsufficientDataWarning()
+    {
+        var path = new HtmlReportService().Write(new AnalysisResult(), CreateTempDirectory());
+        Assert.Contains("Недостаточно данных", File.ReadAllText(path));
+    }
+
+
+    [Fact]
+    public void ExcelFailureDoesNotHideHtmlDiagnostic()
+    {
+        var output = CreateTempDirectory();
+        var result = new StatisticsService().Analyze(new[] { E("chrome", 0, 5) });
+        var generation = new ReportGenerationService().Generate(
+            result,
+            output,
+            includeRaw: false,
+            writeExcel: (_, _, _) => throw new InvalidOperationException("xlsx boom"));
+        Assert.Null(generation.XlsxPath);
+        Assert.NotNull(generation.HtmlPath);
+        Assert.True(File.Exists(generation.HtmlPath));
+        Assert.NotNull(generation.DiagnosticLogPath);
+        Assert.Contains("xlsx boom", File.ReadAllText(generation.DiagnosticLogPath!));
+    }
+
+    [Fact]
+    public void HtmlFailureCreatesDiagnosticLog()
+    {
+        var output = CreateTempDirectory();
+        var result = new StatisticsService().Analyze(new[] { E("chrome", 0, 5) });
+        var generation = new ReportGenerationService().Generate(
+            result,
+            output,
+            includeRaw: false,
+            writeHtml: (_, _) => throw new InvalidOperationException("html boom"));
+        Assert.Null(generation.HtmlPath);
+        Assert.NotNull(generation.XlsxPath);
+        Assert.NotNull(generation.DiagnosticLogPath);
+        var log = File.ReadAllText(generation.DiagnosticLogPath!);
+        Assert.Contains("Ошибка создания HTML", log);
+        Assert.Contains("html boom", log);
+        Assert.Contains("Количество событий", log);
+        Assert.Contains("Количество сессий", log);
+    }
+
     [Fact]
     public void SessionsDoNotOverlapAndTotalsAreBounded()
     {

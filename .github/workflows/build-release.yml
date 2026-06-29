@@ -33,6 +33,30 @@ jobs:
           if (-not $version.StartsWith("8.0.")) {
             throw "Expected .NET 8 SDK, actual SDK: $version"
           }
+      - name: Restore icon assets
+        shell: pwsh
+        run: pwsh -File tools/restore-icons.ps1
+      - name: Verify committed icons
+        shell: pwsh
+        run: |
+          $icons = @(
+            "src/GSPTaskMiningAgent/Assets/GSPTaskMining.ico",
+            "src/GSPTaskMiningAgent/Assets/GSPTaskMiningGreen.ico",
+            "src/GSPTaskMiningAgent/Assets/GSPTaskMiningYellow.ico",
+            "src/GSPTaskMiningAgent/Assets/GSPTaskMiningRed.ico",
+            "src/GSPTaskMiningAgent/Assets/GSPTaskMiningGray.ico"
+          )
+          Add-Type -AssemblyName System.Drawing
+          foreach ($iconPath in $icons) {
+            if (-not (Test-Path $iconPath)) { throw "Icon not found: $iconPath" }
+            if ((Get-Item $iconPath).Length -le 0) { throw "Icon is empty: $iconPath" }
+            $icon = [System.Drawing.Icon]::new((Resolve-Path $iconPath).Path)
+            try {
+              if ($icon.Width -le 0 -or $icon.Height -le 0) { throw "Invalid icon dimensions: $iconPath" }
+            }
+            finally { $icon.Dispose() }
+          }
+          if (-not (Test-Path "src/GSPTaskMiningAgent/Assets/GSPTaskMining.ico")) { throw "ApplicationIcon file is missing before build" }
       - name: Build, test, publish and package
         shell: pwsh
         run: pwsh -File tools/build-portable.ps1
