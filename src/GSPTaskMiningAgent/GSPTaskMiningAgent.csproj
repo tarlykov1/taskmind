@@ -14,5 +14,17 @@
     <RootNamespace>GSPTaskMiningAgent</RootNamespace>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets\GSPTaskMining.ico</ApplicationIcon>
   </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\GSPTaskMiningGreen.ico" />
+    <EmbeddedResource Include="Assets\GSPTaskMiningYellow.ico" />
+    <EmbeddedResource Include="Assets\GSPTaskMiningRed.ico" />
+    <EmbeddedResource Include="Assets\GSPTaskMiningGray.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>GSPTaskMiningAgent.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 </Project>
