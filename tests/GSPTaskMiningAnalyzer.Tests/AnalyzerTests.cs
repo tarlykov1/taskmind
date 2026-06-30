@@ -283,15 +283,38 @@ public sealed class AnalyzerTests
         using var document = JsonDocument.Parse(ExtractReportDataJson(html));
         var intervals = document.RootElement.GetProperty("intervals");
         Assert.True(intervals.GetArrayLength() > 0);
-        var intervalStart = intervals[0]
+        var firstIntervalStart = intervals[0]
             .GetProperty("start")
             .GetDateTimeOffset();
         Assert.Equal(
             TimeSpan.FromHours(3),
-            intervalStart.Offset);
+            firstIntervalStart.Offset);
+        Assert.Equal(
+            0,
+            firstIntervalStart.Hour);
+        var activeIntervals = intervals
+            .EnumerateArray()
+            .Where(interval =>
+                interval.GetProperty("active").GetDouble() > 0)
+            .ToArray();
+        Assert.Single(activeIntervals);
+        var activeIntervalStart = activeIntervals[0]
+            .GetProperty("start")
+            .GetDateTimeOffset();
+        Assert.Equal(
+            TimeSpan.FromHours(3),
+            activeIntervalStart.Offset);
         Assert.Equal(
             10,
-            intervalStart.Hour);
+            activeIntervalStart.Hour);
+        Assert.Equal(
+            0,
+            activeIntervalStart.Minute);
+        Assert.Equal(
+            "27.06 10:00",
+            activeIntervals[0]
+                .GetProperty("label")
+                .GetString());
     }
 
     [Fact]
