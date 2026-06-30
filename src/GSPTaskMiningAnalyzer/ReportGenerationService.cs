@@ -16,7 +16,8 @@ public sealed class ReportGenerationService
         Func<AnalysisResult, string, bool, string>? writeExcel = null,
         Func<AnalysisResult, string, string>? writeHtml = null,
         string input = "data",
-        string arguments = "")
+        string arguments = "",
+        TimeZoneInfo? reportTimeZone = null)
     {
         string? xlsxPath = null;
         string? htmlPath = null;
@@ -30,7 +31,7 @@ public sealed class ReportGenerationService
 
         if (!xlsxOnly)
         {
-            try { htmlPath = (writeHtml ?? ((r, o) => new HtmlReportService().Write(r, o)))(result, outputDirectory); }
+            try { htmlPath = (writeHtml ?? ((r, o) => new HtmlReportService(reportTimeZone).Write(r, o)))(result, outputDirectory); }
             catch (Exception ex) { generationErrors.Add("Ошибка создания HTML: " + ex); }
         }
 

@@ -572,6 +572,35 @@ public sealed class AnalyzerTests
     private static Session CreateSession(string start, string end, string processName) =>
         new(DateTimeOffset.Parse(start), DateTimeOffset.Parse(end), (DateTimeOffset.Parse(end) - DateTimeOffset.Parse(start)).TotalSeconds, processName, processName, "m", "u", 0);
 
+    private static TimeZoneInfo GetMoscowTimeZone()
+    {
+        var ids = new[]
+        {
+            "Russian Standard Time",
+            "Europe/Moscow"
+        };
+
+        foreach (var id in ids)
+        {
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(id);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
+            catch (InvalidTimeZoneException)
+            {
+            }
+        }
+
+        return TimeZoneInfo.CreateCustomTimeZone(
+            "UTC+03",
+            TimeSpan.FromHours(3),
+            "UTC+03",
+            "UTC+03");
+    }
+
     private static void CreateZipWithJsonl(string path, string json)
     {
         using var zip = ZipFile.Open(path, ZipArchiveMode.Create);

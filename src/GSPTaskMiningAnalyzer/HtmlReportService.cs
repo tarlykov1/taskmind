@@ -8,6 +8,13 @@ namespace GSPTaskMiningAnalyzer;
 
 public sealed class HtmlReportService
 {
+    private readonly TimeZoneInfo _reportTimeZone;
+
+    public HtmlReportService(TimeZoneInfo? reportTimeZone = null)
+    {
+        _reportTimeZone = reportTimeZone ?? TimeZoneInfo.Local;
+    }
+
     public string Write(AnalysisResult result, string outputDirectory) => CreateReport(result, outputDirectory);
     public string CreateReport(AnalysisResult result, string outputDirectory)
     {
@@ -30,7 +37,7 @@ public sealed class HtmlReportService
         return path;
     }
 
-    private static object BuildView(AnalysisResult r)
+    private object BuildView(AnalysisResult r)
     {
         var events = r.Events ?? [];
         var sessions = r.Sessions ?? [];
@@ -68,11 +75,13 @@ public sealed class HtmlReportService
     private static bool IsBusinessApp(Session s) => s.State == "active" && !new[] { "GSPTaskMiningAgent", "GSPTaskMiningAnalyzer", "Taskmgr", "LockApp", "unknown", "" }.Contains(Safe(s.ProcessName), StringComparer.OrdinalIgnoreCase);
     private static string Safe(string? value, string fallback = "") => string.IsNullOrWhiteSpace(value) ? fallback : value;
     private static bool GoodChain(string c) { var parts = c.Split('→', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries); return parts.Length > 1 && parts.Zip(parts.Skip(1)).All(p => !p.First.Equals(p.Second, StringComparison.OrdinalIgnoreCase)) && !parts.Any(p => new[] { "GSPTaskMiningAgent", "GSPTaskMiningAnalyzer", "Taskmgr", "LockApp", "unknown" }.Contains(p, StringComparer.OrdinalIgnoreCase)); }
-    private static object[] BuildIntervals(IReadOnlyCollection<Session>? sessions, TimeSpan step)
+    private object[] BuildIntervals(IReadOnlyCollection<Session>? sessions, TimeSpan step)
     {
         if (sessions is null || sessions.Count == 0) return [];
 
-        var firstSessionStart = sessions.Min(s => s.Start).ToLocalTime();
+        var firstSessionStart = sessions
+            .Select(s => TimeZoneInfo.ConvertTime(s.Start, _reportTimeZone))
+            .Min();
         var start = new DateTimeOffset(
             firstSessionStart.Year,
             firstSessionStart.Month,
@@ -81,7 +90,9 @@ public sealed class HtmlReportService
             0,
             0,
             firstSessionStart.Offset);
-        var end = sessions.Max(s => s.End).ToLocalTime();
+        var end = sessions
+            .Select(s => TimeZoneInfo.ConvertTime(s.End, _reportTimeZone))
+            .Max();
         var rows = new List<object>();
 
         for (var intervalStart = start; intervalStart < end; intervalStart = intervalStart.Add(step))
@@ -95,8 +106,8 @@ public sealed class HtmlReportService
 
             foreach (var session in sessions)
             {
-                var sessionStart = session.Start.ToLocalTime();
-                var sessionEnd = session.End.ToLocalTime();
+                var sessionStart = TimeZoneInfo.ConvertTime(session.Start, _reportTimeZone);
+                var sessionEnd = TimeZoneInfo.ConvertTime(session.End, _reportTimeZone);
                 var overlapStart = sessionStart > intervalStart ? sessionStart : intervalStart;
                 var overlapEnd = sessionEnd < intervalEnd ? sessionEnd : intervalEnd;
                 var overlapSeconds = Math.Max(0, (overlapEnd - overlapStart).TotalSeconds);
