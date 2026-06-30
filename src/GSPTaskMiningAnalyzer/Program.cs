@@ -1,8 +1,18 @@
 using GSPTaskMiningAnalyzer;
 using GSPTaskMiningAnalyzer.Models;
 
-var opt = Parse(args);
-if (opt.Debug) Console.WriteLine($"Input={opt.Input} Output={opt.Output}");
+Options opt;
+try
+{
+    opt = Parse(args);
+}
+catch (ArgumentException ex)
+{
+    Console.Error.WriteLine(ex.Message);
+    return 2;
+}
+
+if (opt.Debug) Console.WriteLine($"Input={opt.Input} Output={opt.Output} TimeZone={opt.ReportTimeZone.Id}");
 var (events, errors) = new LogReader().Read(opt.Input);
 if (opt.Machine is not null) events = events.Where(e => e.MachineName.Equals(opt.Machine, StringComparison.OrdinalIgnoreCase)).ToList();
 if (opt.User is not null) events = events.Where(e => e.UserName.Equals(opt.User, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -18,7 +28,8 @@ var generation = new ReportGenerationService().Generate(
     opt.HtmlOnly,
     opt.XlsxOnly,
     input: opt.Input,
-    arguments: string.Join(" ", Environment.GetCommandLineArgs().Skip(1)));
+    arguments: string.Join(" ", Environment.GetCommandLineArgs().Skip(1)),
+    reportTimeZone: opt.ReportTimeZone);
 var xlsxPath = generation.XlsxPath;
 var htmlPath = generation.HtmlPath;
 
@@ -48,11 +59,42 @@ static Options Parse(string[] a)
             case "--html-only": o.HtmlOnly = true; break;
             case "--xlsx-only": o.XlsxOnly = true; break;
             case "--self-test": o.Input = CreateSample(); o.Output = Path.Combine(Path.GetTempPath(), "GSPTaskMiningAnalyzerSelfTest", Guid.NewGuid().ToString("N")); break;
-            case "--timezone": _ = N(); break;
+            case "--timezone": o.ReportTimeZone = ParseTimeZone(N()); break;
         }
     }
     if (o.HtmlOnly && o.XlsxOnly) throw new ArgumentException("--html-only and --xlsx-only cannot be used together.");
     return o;
+}
+
+static TimeZoneInfo ParseTimeZone(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value) ||
+        value.Equals("local", StringComparison.OrdinalIgnoreCase))
+    {
+        return TimeZoneInfo.Local;
+    }
+
+    if (value.Equals("utc", StringComparison.OrdinalIgnoreCase))
+    {
+        return TimeZoneInfo.Utc;
+    }
+
+    try
+    {
+        return TimeZoneInfo.FindSystemTimeZoneById(value);
+    }
+    catch (TimeZoneNotFoundException ex)
+    {
+        throw new ArgumentException(
+            $"Unknown timezone '{value}'. Use 'local', 'utc', or a system timezone ID, for example 'Russian Standard Time' on Windows or 'Europe/Moscow' on Linux.",
+            ex);
+    }
+    catch (InvalidTimeZoneException ex)
+    {
+        throw new ArgumentException(
+            $"Invalid timezone '{value}'. Use 'local', 'utc', or a valid system timezone ID, for example 'Russian Standard Time' on Windows or 'Europe/Moscow' on Linux.",
+            ex);
+    }
 }
 
 static string CreateSample()
@@ -75,4 +117,5 @@ sealed class Options
     public bool Debug;
     public bool HtmlOnly;
     public bool XlsxOnly;
+    public TimeZoneInfo ReportTimeZone = TimeZoneInfo.Local;
 }

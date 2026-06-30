@@ -8,6 +8,13 @@ namespace GSPTaskMiningAnalyzer;
 
 public sealed class HtmlReportService
 {
+    private readonly TimeZoneInfo _reportTimeZone;
+
+    public HtmlReportService(TimeZoneInfo? reportTimeZone = null)
+    {
+        _reportTimeZone = reportTimeZone ?? TimeZoneInfo.Local;
+    }
+
     public string Write(AnalysisResult result, string outputDirectory) => CreateReport(result, outputDirectory);
     public string CreateReport(AnalysisResult result, string outputDirectory)
     {
@@ -30,7 +37,7 @@ public sealed class HtmlReportService
         return path;
     }
 
-    private static object BuildView(AnalysisResult r)
+    private object BuildView(AnalysisResult r)
     {
         var events = r.Events ?? [];
         var sessions = r.Sessions ?? [];
@@ -68,18 +75,73 @@ public sealed class HtmlReportService
     private static bool IsBusinessApp(Session s) => s.State == "active" && !new[] { "GSPTaskMiningAgent", "GSPTaskMiningAnalyzer", "Taskmgr", "LockApp", "unknown", "" }.Contains(Safe(s.ProcessName), StringComparer.OrdinalIgnoreCase);
     private static string Safe(string? value, string fallback = "") => string.IsNullOrWhiteSpace(value) ? fallback : value;
     private static bool GoodChain(string c) { var parts = c.Split('→', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries); return parts.Length > 1 && parts.Zip(parts.Skip(1)).All(p => !p.First.Equals(p.Second, StringComparison.OrdinalIgnoreCase)) && !parts.Any(p => new[] { "GSPTaskMiningAgent", "GSPTaskMiningAnalyzer", "Taskmgr", "LockApp", "unknown" }.Contains(p, StringComparer.OrdinalIgnoreCase)); }
-    private static object[] BuildIntervals(IReadOnlyCollection<Session>? sessions, TimeSpan step)
+    private object[] BuildIntervals(IReadOnlyCollection<Session>? sessions, TimeSpan step)
     {
         if (sessions is null || sessions.Count == 0) return [];
-        var start = new DateTimeOffset(sessions.Min(s => s.Start).LocalDateTime.Date, sessions.First().Start.Offset);
-        var end = sessions.Max(s => s.End).ToLocalTime();
+
+        var firstSessionStart = sessions
+            .Select(s => TimeZoneInfo.ConvertTime(s.Start, _reportTimeZone))
+            .Min();
+        var start = new DateTimeOffset(
+            firstSessionStart.Year,
+            firstSessionStart.Month,
+            firstSessionStart.Day,
+            0,
+            0,
+            0,
+            firstSessionStart.Offset);
+        var end = sessions
+            .Select(s => TimeZoneInfo.ConvertTime(s.End, _reportTimeZone))
+            .Max();
         var rows = new List<object>();
-        for (var t = start; t < end; t = t.Add(step))
+
+        for (var intervalStart = start; intervalStart < end; intervalStart = intervalStart.Add(step))
         {
-            var n = t.Add(step); double a=0,i=0,l=0,u=0; int sw=0;
-            foreach (var s in sessions) { var ov = Math.Max(0, (Min(s.End.ToLocalTime(), n) - Max(s.Start.ToLocalTime(), t)).TotalSeconds); if (ov<=0) continue; if(s.State=="idle") i+=ov; else if(s.State=="locked") l+=ov; else if(s.State=="unknown") u+=ov; else a+=ov; if(s.Start.ToLocalTime()>=t && s.Start.ToLocalTime()<n) sw++; }
-            rows.Add(new { label = t.ToString("dd.MM HH:mm"), start = t, end = n, active = a, idle = i, locked = l, unknown = u, switches = Math.Max(0, sw-1) });
+            var intervalEnd = intervalStart.Add(step);
+            double active = 0;
+            double idle = 0;
+            double locked = 0;
+            double unknown = 0;
+            var switches = 0;
+
+            foreach (var session in sessions)
+            {
+                var sessionStart = TimeZoneInfo.ConvertTime(session.Start, _reportTimeZone);
+                var sessionEnd = TimeZoneInfo.ConvertTime(session.End, _reportTimeZone);
+                var overlapStart = sessionStart > intervalStart ? sessionStart : intervalStart;
+                var overlapEnd = sessionEnd < intervalEnd ? sessionEnd : intervalEnd;
+                var overlapSeconds = Math.Max(0, (overlapEnd - overlapStart).TotalSeconds);
+
+                if (overlapSeconds <= 0)
+                {
+                    continue;
+                }
+
+                switch (session.State)
+                {
+                    case "idle":
+                        idle += overlapSeconds;
+                        break;
+                    case "locked":
+                        locked += overlapSeconds;
+                        break;
+                    case "unknown":
+                        unknown += overlapSeconds;
+                        break;
+                    default:
+                        active += overlapSeconds;
+                        break;
+                }
+
+                if (sessionStart >= intervalStart && sessionStart < intervalEnd)
+                {
+                    switches++;
+                }
+            }
+
+            rows.Add(new { label = intervalStart.ToString("dd.MM HH:mm"), start = intervalStart, end = intervalEnd, active, idle, locked, unknown, switches = Math.Max(0, switches - 1) });
         }
+
         return rows.ToArray();
     }
     private static DateTimeOffset Min(DateTimeOffset a, DateTimeOffset b) => a < b ? a : b;
