@@ -254,27 +254,44 @@ public sealed class AnalyzerTests
     }
 
     [Fact]
-    public void CreatesHtmlWhenRunnerLocalTimeZoneIsUtcPlusThree()
+    public void CreatesHtmlForExplicitUtcPlusThreeReportTimeZone()
     {
-        var previousTimeZone = Environment.GetEnvironmentVariable("TZ");
-
-        try
+        var reportTimeZone = TimeZoneInfo.CreateCustomTimeZone(
+            "Test-UTC+03",
+            TimeSpan.FromHours(3),
+            "Test UTC+03",
+            "Test UTC+03");
+        var result = new AnalysisResult
         {
-            Environment.SetEnvironmentVariable("TZ", "Europe/Moscow");
-            TimeZoneInfo.ClearCachedData();
-            var result = new AnalysisResult { ActiveSeconds = 60 };
-            result.Sessions.Add(CreateSession("2026-06-27T07:00:00+00:00", "2026-06-27T07:01:00+00:00", "chrome"));
+            ActiveSeconds = 60
+        };
+        result.Sessions.Add(
+            CreateSession(
+                "2026-06-27T07:00:00+00:00",
+                "2026-06-27T07:01:00+00:00",
+                "chrome"));
+        var outputDirectory = CreateTempDirectory();
 
-            var path = new HtmlReportService().Write(result, CreateTempDirectory());
+        var path = new HtmlReportService(reportTimeZone)
+            .Write(
+                result,
+                outputDirectory);
 
-            Assert.Equal(TimeSpan.FromHours(3), TimeZoneInfo.Local.GetUtcOffset(DateTime.UtcNow));
-            Assert.True(new FileInfo(path).Length > 0);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("TZ", previousTimeZone);
-            TimeZoneInfo.ClearCachedData();
-        }
+        Assert.True(File.Exists(path));
+        Assert.True(new FileInfo(path).Length > 0);
+        var html = File.ReadAllText(path);
+        using var document = JsonDocument.Parse(ExtractReportDataJson(html));
+        var intervals = document.RootElement.GetProperty("intervals");
+        Assert.True(intervals.GetArrayLength() > 0);
+        var intervalStart = intervals[0]
+            .GetProperty("start")
+            .GetDateTimeOffset();
+        Assert.Equal(
+            TimeSpan.FromHours(3),
+            intervalStart.Offset);
+        Assert.Equal(
+            10,
+            intervalStart.Hour);
     }
 
     [Fact]
@@ -516,7 +533,7 @@ public sealed class AnalyzerTests
             searchStart = tagEnd + 1;
         }
 
-        Assert.True(false, "В HTML не найден блок report-data.");
+        Assert.Fail("В HTML не найден блок report-data.");
         return string.Empty;
     }
 
